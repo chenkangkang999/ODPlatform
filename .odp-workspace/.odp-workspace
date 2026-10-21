@@ -1,0 +1,9 @@
+# ODPlatform Workspace Marker
+#
+# This empty file marks the workspace root.
+# paths.py walks up from any module location to find this file,
+# making path resolution robust against directory restructuring.
+#
+# Industry-standard pattern (used by pytest, poetry, git, npm, cargo).
+#
+# DO NOT DELETE THIS FILE.
