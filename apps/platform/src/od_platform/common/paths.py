@@ -223,6 +223,19 @@ def validation_run_dir(run_id: str) -> Path:
     return VALIDATION_RUNS_DIR / run_id
 
 
+# ============================================================
+# D5 增量: 运行配置目录 (跟 D3 立的 DATASET_CONFIGS_DIR 语义完全不同)
+#   DATASET_CONFIGS_DIR: 描述【数据】的 yaml (odp-transform 产出)
+#   RUNTIME_CONFIGS_DIR : 描述【跑法】的 yaml (runtime_config 子系统产出)
+# ============================================================
+RUNTIME_CONFIGS_DIR: Path = CONFIGS_DIR / "runtime"
+
+
+def runtime_config_path(name: str) -> Path:
+    """返回某个运行配置文件的路径: <CONFIGS_DIR>/runtime/<name>.yaml"""
+    return RUNTIME_CONFIGS_DIR / f"{name}.yaml"
+
+
 def get_run_output_dir(task: str, name: str, run_id: str | None = None,
                        project: Path | None = None) -> Path:
     """拼装一次运行的输出目录.

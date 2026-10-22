@@ -33,7 +33,7 @@ dependencies = [
     "torch>=2.0.0",
     "ultralytics>=8.0.0",
     "pyyaml>=6.0",
-    "pydantic>=2.0",
+    "pydantic>=2.5,<3",
 ]
 
 [project.optional-dependencies]
@@ -53,6 +53,7 @@ odp-init = "od_platform.cli.init_project:initialize_project"
 odp-reset = "od_platform.cli.reset_project:main"
 odp-transform = "od_platform.cli.transform_data:main"
 odp-validate = "od_platform.cli.validate_data:main"
+odp-gen-config = "od_platform.runtime_config.generator:main"
 
 # =============================================================================
 # Hatchling 配置 (告诉它两件事: 包源码在哪、版本号从哪读)
@@ -64,3 +65,20 @@ packages = ["src/od_platform"]
 # 动态版本号: 从 src/od_platform/_version.py 的 __version__ 读
 [tool.hatch.version]
 path = "src/od_platform/_version.py"
+
+# =============================================================================
+# pytest 配置 (D5 新增; D3/D4 测试一并受益)
+# =============================================================================
+[tool.pytest.ini_options]
+testpaths        = ["tests"]
+python_files     = ["test_*.py"]
+python_classes   = ["Test*"]
+python_functions = ["test_*"]
+addopts = [
+    "-v",
+    "--strict-markers",
+    "--tb=short",
+]
+filterwarnings = [
+    "default::UserWarning",
+]
