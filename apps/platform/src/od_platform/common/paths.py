@@ -215,6 +215,14 @@ def dataset_yaml_path(name: str) -> Path:
     return DATASET_CONFIGS_DIR / f"{name}.yaml"
 
 
+# D4 增量:质检报告的家(按需创建,不进 init 清单)
+VALIDATION_RUNS_DIR: Path = RUNS_DIR / "data_validation"
+
+
+def validation_run_dir(run_id: str) -> Path:
+    return VALIDATION_RUNS_DIR / run_id
+
+
 def get_run_output_dir(task: str, name: str, run_id: str | None = None,
                        project: Path | None = None) -> Path:
     """拼装一次运行的输出目录.
