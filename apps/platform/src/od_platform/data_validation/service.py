@@ -7,12 +7,15 @@ from datetime import datetime
 from pathlib import Path
 from typing import List, Optional
 
-from od_platform.common import paths
+from od_platform.common import paths, stamp
+from od_platform.common.lineage import compute_data_fingerprint
+from od_platform.data_validation import VALIDATOR_VERSION
 from od_platform.data_validation.registry import (
     CheckContext, CheckEntry, CheckResult, CheckSeverity, get_all_checks,
 )
 from od_platform.data_validation.report import ValidationReport
 from od_platform.data_validation.snapshot import build_snapshot
+from od_platform.data_validation.checks._lineage import load_manifest_from_yaml
 
 
 def _safe_run_one(entry: CheckEntry, ctx: CheckContext) -> CheckResult:
@@ -45,4 +48,20 @@ def validate_dataset(yaml_path, task_type: Optional[str] = None,
         out_dir.mkdir(parents=True, exist_ok=True)
         report.write_json(out_dir / "report.json")
         report.write_results_csv(out_dir / "results.csv")
+
+    # D6 增量: 盖 validate 章(我这一站验过这批数据)
+    try:
+        manifest, _err, _odp = load_manifest_from_yaml(snapshot.yaml_data)
+        if manifest is not None:
+            data_fp = compute_data_fingerprint(manifest.samples)
+            stamp.write_stamp(
+                stage_file=stamp.STAMP_VALIDATE, data_fingerprint=data_fp,
+                run_id=run_id, tool_version=VALIDATOR_VERSION,
+                payload={"overall_severity": report.overall_severity,
+                         "passed": report.overall_severity == "PASS"},
+            )
+    except Exception as e:  # noqa: BLE001
+        import logging as _lg
+        _lg.getLogger(__name__).warning("盖章失败(不影响质检结果): %s", e)
+
     return report

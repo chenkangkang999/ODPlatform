@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import Optional
 
 from od_platform.common.paths import (
-    MODELS_DIR, PROCESSED_DATA_DIR, RAW_DATA_DIR,
+    DATASET_CONFIGS_DIR, MODELS_DIR, PROCESSED_DATA_DIR, RAW_DATA_DIR,
 )
 
 
@@ -40,3 +40,12 @@ def resolve_pretrained_model(ref: str) -> Path:
 def resolve_trained_model(ref: str) -> Path:
     """'demo_s40' → <repo>/models/trained/demo_s40.pt。"""
     return resolve_ref(ref, base_dir=MODELS_DIR / "trained", default_suffix=".pt")
+
+
+def resolve_dataset_yaml(ref: str) -> Path:
+    """'demo' → <repo>/configs/datasets/demo.yaml;也可传显式路径。
+
+    与 paths.dataset_yaml_path 同一落点(odp-transform 的产出位置),
+    供 odp-train / 数据身份对账按名字找回数据集 yaml。
+    """
+    return resolve_ref(ref, base_dir=DATASET_CONFIGS_DIR, default_suffix=".yaml")

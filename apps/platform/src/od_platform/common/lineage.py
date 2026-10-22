@@ -23,6 +23,19 @@ def _sha256_bytes(b: bytes) -> str:
     return hashlib.sha256(b).hexdigest()
 
 
+def canonical_sha256(obj) -> str:
+    """规范化哈希的唯一实现。任何"对一份结构算哈希"的需求都走这里。"""
+    blob = json.dumps(obj, ensure_ascii=False, sort_keys=True,
+                      separators=(",", ":")).encode("utf-8")
+    return _sha256_bytes(blob)
+
+
+def compute_data_fingerprint(samples: List[SampleLineage]) -> str:
+    """数据指纹: 只看"有哪些样本 + 内容", 不含 split 归属。
+    改划分比例不动它; 加/删样本、改标签字节才动它。"""
+    return canonical_sha256(sorted((s.stem, s.sha256) for s in samples))
+
+
 @dataclass(frozen=True)
 class SampleLineage:
     """单样本 lineage:stem 属于哪个 split、内容 sha256 是多少。"""
@@ -40,11 +53,7 @@ def compute_contract_fingerprint(
     samples: List[SampleLineage],
     tool_version: str = TOOL_VERSION,
 ) -> str:
-    """对'配方 + 排序后的样本指纹行'做规范化 sha256。
-
-    排序是为了与集合序无关:同样的划分,谁先谁后指纹一致。
-    created_at 不参与指纹 —— 指纹回答'内容是什么',不回答'何时产生'。
-    """
+    """对'配方 + 排序后的样本指纹行'做规范化 sha256。"""
     canonical = {
         "dataset": dataset,
         "strategy": strategy,
@@ -54,9 +63,7 @@ def compute_contract_fingerprint(
         "samples": sorted((s.stem, s.split, s.sha256) for s in samples),
         "tool_version": tool_version,
     }
-    blob = json.dumps(canonical, ensure_ascii=False, sort_keys=True,
-                      separators=(",", ":")).encode("utf-8")
-    return _sha256_bytes(blob)
+    return canonical_sha256(canonical)
 
 
 @dataclass

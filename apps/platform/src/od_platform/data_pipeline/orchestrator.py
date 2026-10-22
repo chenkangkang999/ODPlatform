@@ -17,7 +17,8 @@ from od_platform.common.constants import (
     DEFAULT_RANDOM_STATE, DEFAULT_SPLIT_STRATEGY, DEFAULT_TRAIN_RATE, DEFAULT_VAL_RATE,
     IMAGE_EXTENSIONS, Task,
 )
-from od_platform.common.lineage import SplitManifest
+from od_platform.common.lineage import TOOL_VERSION, compute_data_fingerprint, SplitManifest
+from od_platform.common import stamp
 from od_platform.common.run_context import RunContext
 from od_platform.data_pipeline.convert.registry import ConvertOptions
 from od_platform.data_pipeline.convert.service import convert_data_to_yolo
@@ -177,6 +178,17 @@ class DatasetPipeline:
                 task=self.task, manifest_ref=manifest_ref)
 
         logger.info("数据集 %r 完成: %s", self.dataset, counts)
+
+        # D6 增量: 盖 transform 章(我这一站划过这批数据)
+        data_fp = compute_data_fingerprint(manifest.samples)
+        stamp.write_stamp(
+            stage_file=stamp.STAMP_TRANSFORM, data_fingerprint=data_fp,
+            run_id=run.run_id, tool_version=TOOL_VERSION,
+            payload={"dataset": self.dataset, "strategy": self.split_strategy,
+                     "contract_fingerprint": manifest.contract_fingerprint,
+                     "counts": counts},
+        )
+
         return {
             "counts": counts,
             "yaml": str(yaml_path),
