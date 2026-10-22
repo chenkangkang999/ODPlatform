@@ -1,0 +1,19 @@
+# infer_pipeline.yaml — ODPlatform 推理子系统的帧源+美化配置
+frame_source:
+  camera:
+    width: 1280
+    height: 720
+    fps: 30
+
+visualization:
+  enabled: true
+  use_label_mapping: true
+  label_mapping:
+    person: 人员
+    car: 汽车
+    bicycle: 自行车
+  color_mapping:
+    person:    [0, 255, 0]
+    car:       [0, 0, 255]
+  default_color: [0, 255, 0]
+  style: {}

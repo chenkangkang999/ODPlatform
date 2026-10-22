@@ -58,6 +58,7 @@ RUNS_DIR: Path = ROOT_DIR / "runs"
 # 模型子目录
 PRETRAINED_MODELS_DIR: Path = MODELS_DIR / "pretrained"  # 下载的预训练权重(输入)
 TRAINED_MODELS_DIR: Path = MODELS_DIR / "trained"        # 训练产出、长期保留的权重(产物)
+CHECKPOINTS_DIR: Path = MODELS_DIR / "checkpoints"      # 推理时查找的权重目录
 
 # 数据集子目录
 # 设计依据见 D0 决定 5:原始(只读)与派生(可再生)分家。

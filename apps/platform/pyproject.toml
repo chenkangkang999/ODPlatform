@@ -55,6 +55,7 @@ odp-transform = "od_platform.cli.transform_data:main"
 odp-validate = "od_platform.cli.validate_data:main"
 odp-gen-config = "od_platform.runtime_config.generator:main"
 odp-train = "od_platform.cli.train_model:main"
+odp-infer = "od_platform.cli.infer:main"
 
 # =============================================================================
 # Hatchling 配置 (告诉它两件事: 包源码在哪、版本号从哪读)
