@@ -1,0 +1,28 @@
+path: D:/ODPlatform/data/processed/demo
+train: images/train
+val: images/val
+test: images/test
+names:
+  0: head
+  1: 反光衣
+nc: 2
+odp_meta:
+  schema_version: 1
+  dataset_name: demo
+  source_format: pascal_voc
+  task: detect
+  tool_version: odp-transform/0.4
+  created_at: '2026-10-22T09:29:12'
+  contract_fingerprint: 08c961623071605a5b0d17b14f94d3fe9f97a12a3e936d5f1858720caa43d275
+  manifest_path: runs/data_pipeline/20261022-092912/manifest.json
+  split:
+    strategy: stratified_multilabel
+    seed: 42
+    rates:
+      train: 0.8
+      val: 0.1
+      test: 0.1
+    counts:
+      train: 51
+      val: 6
+      test: 6
