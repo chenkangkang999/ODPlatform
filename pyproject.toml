@@ -1,0 +1,58 @@
+# pyproject.toml(仓库根)
+# =============================================================================
+# ODPlatform Monorepo —— 仓库根配置
+#
+# 这份 pyproject 不描述任何"包",所以它【既没有 [build-system]、也没有 [project]】:
+# 它唯一的职责是放【全仓共享的工具配置】。ruff / mypy / pytest 从仓库根运行时,
+# 会自动读到这里的 [tool.*],于是 apps/ 下所有端、加上顶层 tests/,用的都是同一套
+# 代码风格 / 类型检查 / 测试规则——配置只此一份,不必每个端各抄一遍。
+#
+# (一份只含 [tool.*] 的 pyproject 完全合法:这些工具只读自己那一段,不需要 [project]。)
+# =============================================================================
+
+# =============================================================================
+# Ruff 配置(代码风格 + isort)
+# =============================================================================
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+src = [
+    "apps/platform/src",
+]
+
+[tool.ruff.lint]
+select = ["E", "W", "F", "I", "B", "C4", "UP"]
+ignore = ["E501"]
+
+[tool.ruff.lint.isort]
+known-first-party = ["od_platform"]
+
+# =============================================================================
+# Mypy 配置(类型检查)
+# =============================================================================
+[tool.mypy]
+python_version = "3.10"
+warn_return_any = true
+warn_unused_ignores = true
+no_implicit_optional = true
+
+[[tool.mypy.overrides]]
+module = ["colorlog.*", "psutil.*", "ultralytics.*", "torch.*"]
+ignore_missing_imports = true
+
+# =============================================================================
+# Pytest 配置(测试发现 + 标记)
+# =============================================================================
+[tool.pytest.ini_options]
+minversion = "7.0"
+testpaths = [
+    "apps/platform/tests",
+    "tests",
+]
+python_files = ["test_*.py"]
+addopts = ["-v", "--strict-markers", "--tb=short"]
+markers = [
+    "unit: 单元测试 (快,无 IO)",
+    "integration: 集成测试 (有 IO)",
+    "slow: 慢测试 (> 1s)",
+]
