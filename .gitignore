@@ -81,3 +81,12 @@ temp/
 *.pkl
 *.h5
 *.npz
+
+# Python venv
+.venv/
+venv/
+__pycache__/
+*.pyc
+*.egg-info/
+dist/
+build/
