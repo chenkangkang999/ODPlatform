@@ -5,9 +5,10 @@ import json
 import logging
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any
 
 from od_platform.common import refs, stamp
+from od_platform.common.dataset_yaml import write_resolved_copy
 from od_platform.common.paths import PRETRAINED_MODELS_DIR
 from od_platform.common.run_context import RunContext
 from od_platform.data_validation.identity import DataIdentity, reconcile_data_identity
@@ -19,15 +20,20 @@ logger = logging.getLogger(__name__)
 
 TRAINER_VERSION = "odp-train/0.4"
 
+# 运行期数据集副本名。ultralytics 把相对 path 解析成 DATASETS_DIR/path, 与 ODP 的
+# "相对仓库根"约定不同(见 od_platform.common.dataset_yaml), 所以开训前先落一份
+# path 已解析成绝对路径的副本, 只喂给 ultralytics; 源 yaml 保持可移植。
+DATASET_RESOLVED_NAME = "dataset_resolved.yaml"
+
 
 @dataclass(frozen=True)
 class TrainResult:
     success:     bool
     run_id:      str
-    save_dir:    Optional[Path] = None
-    best_weight: Optional[Path] = None
-    metrics:     Optional[TrainMetrics] = None
-    identity:    Optional[DataIdentity] = None
+    save_dir:    Path | None = None
+    best_weight: Path | None = None
+    metrics:     TrainMetrics | None = None
+    identity:    DataIdentity | None = None
     message:     str = ""
 
 
@@ -50,14 +56,16 @@ def _run_training(model_arg: str, config: Any, data_yaml: Path, run: RunContext)
     return model.train(data=str(data_yaml), **kwargs)
 
 
-def _write_audit(run: RunContext, config: Any, merger: Optional[Any], data_yaml: Path,
+def _write_audit(run: RunContext, config: Any, merger: Any | None, data_yaml: Path,
                  stem: str, metrics: TrainMetrics,
-                 identity: Optional[DataIdentity]) -> Path:
+                 identity: DataIdentity | None,
+                 resolved_yaml: Path | None = None) -> Path:
     audit = {
         "run_id": run.run_id, "created_at": run.created_at,
         "artifacts": {"run_dir": str(run.run_dir), "stem": stem},
         "experiment_name": getattr(config, "experiment_name", None),
         "data_yaml": str(data_yaml),
+        "data_yaml_resolved": str(resolved_yaml) if resolved_yaml else None,
         "data_identity": identity.to_dict() if identity is not None else None,
         "config": config.to_audit_snapshot(),
         "metrics": metrics.to_dict(),
@@ -71,7 +79,7 @@ def _write_audit(run: RunContext, config: Any, merger: Optional[Any], data_yaml:
 
 
 def train_yolo(*, config: Any, data_yaml: Path, run: RunContext, stem: str,
-               merger: Optional[Any] = None, archive: bool = True,
+               merger: Any | None = None, archive: bool = True,
                require_validated: bool = True) -> TrainResult:
     logger.info("=" * 60)
     logger.info("训练开始 | run_id=%s", run.run_id)
@@ -93,8 +101,11 @@ def train_yolo(*, config: Any, data_yaml: Path, run: RunContext, stem: str,
     logger.info("模型(声明): %s", model_ref)
     model_arg = _resolve_model_arg(model_ref)
 
+    resolved_yaml: Path | None = None
     try:
-        results = _run_training(model_arg, config, data_yaml, run)
+        resolved_yaml = write_resolved_copy(
+            data_yaml, run.artifact_path(DATASET_RESOLVED_NAME))
+        results = _run_training(model_arg, config, resolved_yaml, run)
     except KeyboardInterrupt:
         logger.warning("训练被手动中断 (Ctrl-C) | run_id=%s | 现场保留: %s",
                        run.run_id, run.run_dir)
@@ -116,7 +127,8 @@ def train_yolo(*, config: Any, data_yaml: Path, run: RunContext, stem: str,
                      "experiment_name": getattr(config, "experiment_name", None),
                      "reconciled": identity.reconciled},
         )
-    _write_audit(run, config, merger, data_yaml, stem, metrics, identity)
+    _write_audit(run, config, merger, data_yaml, stem, metrics, identity,
+                 resolved_yaml=resolved_yaml)
 
     best = archive_best_weight(run.run_dir, stem) if archive else None
     logger.info("训练完成 | run_id=%s | 现场: %s", run.run_id, run.run_dir)

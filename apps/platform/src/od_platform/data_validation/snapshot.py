@@ -11,6 +11,7 @@ from typing import Dict, List, Optional, Tuple
 import yaml
 
 from od_platform.common.constants import IMAGE_EXTENSIONS, Task
+from od_platform.common.dataset_yaml import resolve_dataset_root
 from od_platform.data_validation.labels import parse_label_line
 
 logger = logging.getLogger(__name__)
@@ -65,11 +66,11 @@ def _load_yaml(yaml_path: Path) -> Tuple[Dict, Optional[str]]:
 
 
 def _resolve_data_root(yaml_path: Path, data: Dict) -> Optional[Path]:
-    raw = data.get("path")
-    if not raw:
-        return None
-    p = Path(raw)
-    return p if p.is_absolute() else (yaml_path.parent / p).resolve()
+    """解析 yaml 的 path:绝对路径原样;相对路径先按 yaml 所在目录, 再按仓库根。
+
+    规则与写入端(yaml_writer)成对, 统一在 :mod:`od_platform.common.dataset_yaml`。
+    """
+    return resolve_dataset_root(yaml_path, data.get("path"))
 
 
 def _list_images(split_dir: Path) -> Tuple[Path, ...]:

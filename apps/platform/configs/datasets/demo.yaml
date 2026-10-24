@@ -1,4 +1,4 @@
-path: D:/ODPlatform/data/processed/demo
+path: data/processed/demo
 train: images/train
 val: images/val
 test: images/test
@@ -12,9 +12,9 @@ odp_meta:
   source_format: pascal_voc
   task: detect
   tool_version: odp-transform/0.4
-  created_at: '2026-10-24T15:05:55'
+  created_at: '2026-10-24T20:08:27'
   contract_fingerprint: c324743351c8bfb5d6555bfadbcaa84b9fede6aea00475fc9e430a58824e7b67
-  manifest_path: runs/data_pipeline/20261024-150555/manifest.json
+  manifest_path: runs/data_pipeline/20261024-200827/manifest.json
   split:
     strategy: random
     seed: 42

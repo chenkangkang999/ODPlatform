@@ -2,6 +2,10 @@
 
 odp_meta 是"产品合格证":记录这份成品由谁、用什么配方产出,契约指纹与 manifest 路径
 都在里面 —— D4 质检凭它找到 manifest 对账。yaml 最后写:物化成功才盖章。
+
+**path 必须可移植**:这个 yaml 进 git,所以 ``path`` 写【相对仓库根】的 POSIX 路径
+(如 ``data/processed/demo``),绝不写死盘符 —— 路径规则与解析统一在
+:mod:`od_platform.common.dataset_yaml`,别在这里自己拼。
 """
 from __future__ import annotations
 
@@ -10,6 +14,7 @@ from typing import List
 
 import yaml
 
+from od_platform.common.dataset_yaml import to_repo_relative
 from od_platform.common.lineage import SplitManifest
 
 
@@ -25,7 +30,7 @@ def write_dataset_yaml(
     manifest_ref: str,
 ) -> None:
     doc = {
-        "path": dataset_root.as_posix(),
+        "path": to_repo_relative(dataset_root),
         "train": "images/train",
         "val": "images/val",
         "test": "images/test",
