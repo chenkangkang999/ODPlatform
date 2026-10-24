@@ -1,77 +1,42 @@
-"""frame_source 包桩 — 帧源抽象(图片目录/视频/摄像头)."""
+#!/usr/bin/env python
+# -*- coding:utf-8 -*-
+# @FileName  : __init__.py
+# @Author    : 雨霓同学
+# @Project   : ODPlatform / frame_source
+# @Function  : frame_source 包入口
+"""
+frame_source: 统一帧输入源抽象层(可插拔 · 多模态)。
+"""
 from __future__ import annotations
 
-import enum
-from dataclasses import dataclass, field
-from pathlib import Path
-from typing import Iterator, Optional
+__version__ = "0.2.0"
 
-IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png", ".bmp", ".tif", ".tiff"}
+from .core import (
+    SourceType, FrameInfo, Frame, CameraIntrinsics, EndReason, is_recoverable,
+    IMAGE_EXTENSIONS, VIDEO_EXTENSIONS, STREAM_SCHEMES, is_stream_url,
+    SourceConfig, CameraConfig, VideoConfig, ImageConfig, ImageFolderConfig,
+    CameraBackend, CameraCodec,
+    FrameSource,
+    register_source, build_from_config, build_from_string, list_sources,
+)
 
+from .sources import CameraSource, VideoSource, ImageSource, ImageFolderSource
 
-class SourceType(enum.Enum):
-    IMAGE = "image"
-    VIDEO = "video"
-    CAMERA = "camera"
-    RTSP = "rtsp"
+from .wrappers import ThreadedSource, BufferStrategy, AsyncSource, ReconnectingSource
 
+from .factory import create_frame_source, create_threaded_source, create_async_source
 
-@dataclass
-class FrameInfo:
-    frame_index: int = 0
-    filename: str = ""
-    fps: float = 30.0
+from .plugins import load_plugins
 
-
-@dataclass
-class Frame:
-    image: object = None
-    info: FrameInfo = field(default_factory=FrameInfo)
-
-
-@dataclass
-class CameraConfig:
-    camera_id: int = 0
-    width: int = 1280
-    height: int = 720
-    fps: int = 30
-    backend: str = "auto"
-
-
-class _ImageDirSource:
-    def __init__(self, path: str):
-        self._path = Path(path)
-        self._files = sorted(p for p in self._path.iterdir()
-                             if p.suffix.lower() in IMAGE_EXTENSIONS)
-        self._idx = 0
-
-    def get_source_type(self) -> SourceType:
-        return SourceType.IMAGE
-
-    def __iter__(self) -> Iterator[Frame]:
-        import cv2
-        for i, f in enumerate(self._files):
-            img = cv2.imread(str(f))
-            if img is not None:
-                yield Frame(image=img, info=FrameInfo(frame_index=i, filename=f.name))
-
-    def __enter__(self):
-        return self
-
-    def __exit__(self, *a):
-        pass
-
-
-def create_frame_source(source, *, stride: int = 1):
-    """工厂: 根据 source 字符串返回帧源. 桩实现只支持图片目录."""
-    s = str(source)
-    p = Path(s)
-    if p.is_dir():
-        return _ImageDirSource(s)
-    # 视频/摄像头/RTSP 桩: 返回空迭代器
-    class _EmptySource:
-        def get_source_type(self): return SourceType.VIDEO
-        def __iter__(self): return iter([])
-        def __enter__(self): return self
-        def __exit__(self, *a): pass
-    return _EmptySource()
+__all__ = [
+    "__version__",
+    "SourceType", "FrameInfo", "Frame", "CameraIntrinsics", "EndReason", "is_recoverable",
+    "IMAGE_EXTENSIONS", "VIDEO_EXTENSIONS", "STREAM_SCHEMES", "is_stream_url",
+    "SourceConfig", "CameraConfig", "VideoConfig", "ImageConfig", "ImageFolderConfig",
+    "CameraBackend", "CameraCodec",
+    "FrameSource", "register_source", "build_from_config", "build_from_string", "list_sources",
+    "CameraSource", "VideoSource", "ImageSource", "ImageFolderSource",
+    "ThreadedSource", "BufferStrategy", "AsyncSource", "ReconnectingSource",
+    "create_frame_source", "create_threaded_source", "create_async_source",
+    "load_plugins",
+]
