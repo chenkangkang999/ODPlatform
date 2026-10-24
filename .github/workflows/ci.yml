@@ -1,0 +1,61 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  check:
+    name: ruff / mypy / pytest / 硬编码守卫
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: 安装 Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: 安装依赖
+        # CI 只验证代码正确性, 不测 GPU 性能 —— 先装 CPU 版 torch,
+        # 免得 ultralytics 的依赖把 2.5GB 的 CUDA wheel 拖下来。
+        run: |
+          python -m pip install --upgrade pip
+          pip install torch torchvision --index-url https://download.pytorch.org/whl/cpu
+          pip install -e "apps/platform[dev]"
+
+      # 存量债务未清: ruff 707 条 / mypy 86 条(以 UP006/UP045/UP035/I001 为主, 多为机械可修)。
+      # 现在只报告不阻塞 —— 债务清完后请删掉 continue-on-error, 改成硬门禁。
+      - name: 代码风格 (ruff) —— 仅报告, 不阻塞
+        continue-on-error: true
+        run: ruff check .
+
+      - name: 类型检查 (mypy) —— 仅报告, 不阻塞
+        continue-on-error: true
+        run: mypy apps/platform/src
+
+      - name: 测试 (pytest)
+        run: pytest -q
+
+      - name: 硬编码守卫 (禁止绝对路径)
+        shell: bash
+        run: |
+          # 匹配"盘符 + 斜杠"形式的绝对路径; 前置字符类排除 https:// 这类误报。
+          set +e
+          hits=$(grep -rInE '(^|[^A-Za-z0-9])[A-Za-z]:[\\/]' \
+                   --include='*.py' --include='*.yaml' --include='*.yml' \
+                   --include='*.json' --include='*.toml' \
+                   --exclude-dir=.git --exclude-dir=.venv --exclude-dir=runs \
+                   --exclude-dir=logging --exclude-dir=.pytest_cache .)
+          code=$?
+          set -e
+          if [ "$code" -eq 0 ]; then
+            echo "::error::发现硬编码绝对路径, 请改用 common/paths.py 的常量或相对仓库根的路径:"
+            echo "$hits"
+            exit 1
+          fi
+          echo "✅ 未发现硬编码绝对路径"
