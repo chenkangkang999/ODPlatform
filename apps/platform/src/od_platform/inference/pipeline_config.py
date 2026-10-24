@@ -1,4 +1,4 @@
-"""帧源捕获 + 美化 的配置读取 helper."""
+"""帧源捕获 + 美化 + 输出 的配置读取 helper."""
 from __future__ import annotations
 
 import logging
@@ -8,7 +8,17 @@ from typing import Any
 
 import yaml
 
+from od_platform.common.paths import RUNTIME_CONFIGS_DIR
+
+from .defaults import (
+    DEFAULT_VIDEO_FILENAME,
+    DEFAULT_VIDEO_FOURCC,
+    DEFAULT_VIDEO_FPS,
+)
+
 logger = logging.getLogger(__name__)
+
+DEFAULT_PIPELINE_CONFIG_NAME = "infer_pipeline.yaml"
 
 
 def _to_bgr_tuple(value: Any) -> tuple[int, int, int]:
@@ -27,6 +37,10 @@ class PipelineConfig:
     default_color: tuple[int, int, int] = (0, 255, 0)
     font_path: str | None = None
     style_overrides: dict[str, Any] = field(default_factory=dict)
+    # 输出(视频源): 文件名 / OpenCV 四字符编码器 / 读不到 fps 时的兜底
+    video_filename: str = DEFAULT_VIDEO_FILENAME
+    video_fourcc: str = DEFAULT_VIDEO_FOURCC
+    default_fps: float = DEFAULT_VIDEO_FPS
 
     def build_camera_config(self):
         from od_platform.frame_source import CameraConfig
@@ -48,12 +62,26 @@ class PipelineConfig:
             "font_path": self.font_path,
             "camera": dict(self.camera_raw),
             "style_overrides_n": len(self.style_overrides),
+            "output": {
+                "filename": self.video_filename,
+                "fourcc": self.video_fourcc,
+                "default_fps": self.default_fps,
+            },
         }
+
+
+def default_pipeline_config_path() -> Path:
+    """pipeline 配置的默认位置。
+
+    必须用 paths.RUNTIME_CONFIGS_DIR 拼 —— 以前写的是相对当前目录的
+    ``configs/runtime/infer_pipeline.yaml``, 换个工作目录跑就静默回落到默认配置。
+    """
+    return RUNTIME_CONFIGS_DIR / DEFAULT_PIPELINE_CONFIG_NAME
 
 
 def load_pipeline_config(yaml_path: str | Path | None) -> PipelineConfig:
     if yaml_path is None:
-        yaml_path = Path("configs/runtime/infer_pipeline.yaml")
+        yaml_path = default_pipeline_config_path()
     else:
         yaml_path = Path(yaml_path)
 
@@ -86,7 +114,17 @@ def load_pipeline_config(yaml_path: str | Path | None) -> PipelineConfig:
     pc.font_path = vz.get("font_path")
     pc.style_overrides = dict(vz.get("style", {}) or {})
 
+    out = raw.get("output", {}) or {}
+    pc.video_filename = str(out.get("filename", DEFAULT_VIDEO_FILENAME))
+    pc.video_fourcc = str(out.get("fourcc", DEFAULT_VIDEO_FOURCC))
+    try:
+        pc.default_fps = float(out.get("default_fps", DEFAULT_VIDEO_FPS))
+    except (TypeError, ValueError):
+        logger.warning("output.default_fps 不是数字, 用默认值 %.1f", DEFAULT_VIDEO_FPS)
+        pc.default_fps = DEFAULT_VIDEO_FPS
+
     logger.info(f"pipeline 配置加载: {yaml_path}, "
                 f"美化={pc.viz_enabled}, 标签映射={len(pc.label_mapping)}, "
-                f"颜色映射={len(pc.color_mapping)}")
+                f"颜色映射={len(pc.color_mapping)}, "
+                f"输出={pc.video_filename}({pc.video_fourcc})")
     return pc

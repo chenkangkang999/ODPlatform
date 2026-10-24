@@ -7,8 +7,23 @@ from queue import Empty, Full, Queue
 from threading import Event, Lock, Thread
 
 from od_platform.frame_source import create_frame_source
+from od_platform.frame_source.core.types import is_stream_url
 
 from .cancel import CancelToken
+from .defaults import (
+    DISPLAY_DRAIN_SEC,
+    DISPLAY_JOIN_SEC,
+    DISPLAY_POLL_SEC,
+    LIVE_QUEUE_SIZE,
+    PAUSE_POLL_SEC,
+    QUEUE_PUT_TIMEOUT_SEC,
+    READER_QUEUE_FACTOR,
+    READER_QUEUE_MIN,
+    READER_READ_TIMEOUT_SEC,
+    RENDER_POLL_SEC,
+    RENDER_QUEUE_SIZE,
+    RENDERER_JOIN_SEC,
+)
 from .hooks import FrameEvent, InferHooks, ProgressEvent
 from .overlay import Metrics, draw_hud, draw_pause
 from .sinks import NullSink, OutputSink
@@ -35,7 +50,7 @@ def _put_latest(q: Queue, item) -> None:
 def _put_block(q: Queue, item) -> None:
     while True:
         try:
-            q.put(item, timeout=1.0)
+            q.put(item, timeout=QUEUE_PUT_TIMEOUT_SEC)
             return
         except Full:
             continue
@@ -57,7 +72,7 @@ class _Reader(Thread):
         self._camera_config = camera_config
         self._live = live
         self._capture_fps = capture_fps
-        self.q: Queue = Queue(maxsize=1 if live else capacity)
+        self.q: Queue = Queue(maxsize=LIVE_QUEUE_SIZE if live else capacity)
         self._stop_evt = Event()
         self.source_type = None
         self.error: Exception | None = None
@@ -127,7 +142,7 @@ class _Renderer(Thread):
     def run(self) -> None:
         while not self._stop_evt.is_set():
             try:
-                item = self._in.get(timeout=0.1)
+                item = self._in.get(timeout=RENDER_POLL_SEC)
             except Empty:
                 continue
             if item is _SENTINEL:
@@ -179,7 +194,7 @@ class _Display(Thread):
         while not self._stop_evt.is_set():
             frame = None
             try:
-                item = self._out.get(timeout=0.03)
+                item = self._out.get(timeout=DISPLAY_POLL_SEC)
                 if item is _SENTINEL:
                     pass
                 else:
@@ -227,13 +242,13 @@ class ThreadedPipeline:
     def run(self, stats) -> bool:
         m = Metrics()
         s = self.source
-        live = s.isdigit() or s.lower().startswith(("rtsp://", "rtmp://"))
+        live = s.isdigit() or is_stream_url(s)
         eff_batch = 1 if live else self.batch_size
         render_drop = not self.save
         reader = _Reader(s, self.camera_config, live=live,
-                         capacity=max(eff_batch * 2, 8), capture_fps=m.capture)
+                         capacity=max(eff_batch * READER_QUEUE_FACTOR, READER_QUEUE_MIN), capture_fps=m.capture)
         in_q: Queue = Queue(maxsize=max(eff_batch * 2, 4))
-        out_q: Queue = Queue(maxsize=2)
+        out_q: Queue = Queue(maxsize=RENDER_QUEUE_SIZE)
         controller = _Controller()
         renderer = None
         display = None
@@ -252,12 +267,12 @@ class ThreadedPipeline:
                     if self._handle_key(display, controller):
                         interrupted = True
                         break
-                    time.sleep(0.02)
+                    time.sleep(PAUSE_POLL_SEC)
                     continue
                 if self._is_cancelled():
                     interrupted = True
                     break
-                first = reader.get(timeout=2.0)
+                first = reader.get(timeout=READER_READ_TIMEOUT_SEC)
                 if first is None:
                     if reader.error:
                         raise reader.error
@@ -334,12 +349,12 @@ class ThreadedPipeline:
             reader.stop()
             _put_block(in_q, _SENTINEL)
             if renderer is not None:
-                renderer.join(timeout=3.0)
+                renderer.join(timeout=RENDERER_JOIN_SEC)
                 renderer.stop()
             if display is not None:
-                time.sleep(0.05)
+                time.sleep(DISPLAY_DRAIN_SEC)
                 display.stop()
-                display.join(timeout=1.0)
+                display.join(timeout=DISPLAY_JOIN_SEC)
             if sink_opened:
                 try:
                     self.sink.close()

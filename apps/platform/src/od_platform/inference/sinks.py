@@ -9,6 +9,12 @@ import numpy as np
 
 from od_platform.frame_source import SourceType
 
+from .defaults import (
+    DEFAULT_VIDEO_FILENAME,
+    DEFAULT_VIDEO_FOURCC,
+    DEFAULT_VIDEO_FPS,
+)
+
 logger = logging.getLogger(__name__)
 
 
@@ -24,7 +30,19 @@ class OutputSink(ABC):
 
 
 class LocalFileSink(OutputSink):
-    def __init__(self) -> None:
+    """把结果落到本地: 视频/摄像头源写成一个 mp4, 图像源写成 jpg。
+
+    文件名、编码器、兜底帧率都可以从 pipeline 配置覆盖
+    (``configs/runtime/infer_pipeline.yaml`` 的 output 段), 默认值集中在
+    :mod:`od_platform.inference.defaults` —— 这里不写魔法数。
+    """
+
+    def __init__(self, *, filename: str = DEFAULT_VIDEO_FILENAME,
+                 fourcc: str = DEFAULT_VIDEO_FOURCC,
+                 default_fps: float = DEFAULT_VIDEO_FPS) -> None:
+        self.filename = filename
+        self.fourcc = fourcc
+        self.default_fps = default_fps
         self.output_dir: Path | None = None
         self._is_stream: bool = False
         self._video = None
@@ -40,9 +58,10 @@ class LocalFileSink(OutputSink):
             if self._is_stream:
                 if self._video is None:
                     h, w = annotated.shape[:2]
-                    fps = float(frame.info.fps) if getattr(frame.info, "fps", None) else 30.0
-                    out = self.output_dir / "output.mp4"
-                    fourcc = cv2.VideoWriter_fourcc(*"mp4v")
+                    fps = (float(frame.info.fps)
+                           if getattr(frame.info, "fps", None) else self.default_fps)
+                    out = self.output_dir / self.filename
+                    fourcc = cv2.VideoWriter_fourcc(*self.fourcc)
                     self._video = cv2.VideoWriter(str(out), fourcc, fps, (w, h))
                 self._video.write(annotated)
             else:
@@ -64,5 +83,5 @@ class LocalFileSink(OutputSink):
 
 class NullSink(OutputSink):
     def open(self, output_dir: Path, source_type: SourceType) -> None: ...
-    def write(self, frame, annotated) -> None: ...
+    def write(self, frame, annotated: np.ndarray) -> None: ...
     def close(self) -> None: ...

@@ -77,6 +77,37 @@ _C_LOOP = (255, 200, 0)
 _C_CURRENT = (255, 255, 255)
 _C_OBJ = (120, 220, 255)
 
+# HUD 面板布局 / REC 标记(具名, 免得数字散落在绘制逻辑里)
+HUD_PANEL_X = 12
+HUD_PANEL_Y = 12
+HUD_PANEL_WIDTH = 230
+HUD_TEXT_SCALE = 0.5
+HUD_TEXT_THICKNESS = 1
+HUD_ROW_HEIGHT = 22
+HUD_TEXT_BASELINE = 14
+HUD_TEXT_OFFSET_X = 6
+HUD_PADDING = 10
+HUD_LABEL_WIDTH = 84
+HUD_BG_COLOR = (20, 20, 20)
+HUD_BG_ALPHA = 0.55
+HUD_ACCENT_COLOR = (0, 200, 255)
+HUD_HINT_COLOR = (210, 210, 210)
+HUD_REC_COLOR = (0, 0, 255)
+HUD_REC_DOT_OFFSET_X = 70
+HUD_REC_DOT_Y = 24
+HUD_REC_DOT_RADIUS = 7
+HUD_REC_TEXT_OFFSET_X = 56
+HUD_REC_TEXT_Y = 30
+HUD_REC_TEXT_SCALE = 0.6
+HUD_REC_TEXT_THICKNESS = 2
+PAUSE_TEXT = "PAUSED"
+PAUSE_TEXT_SCALE = 1.8
+PAUSE_TEXT_THICKNESS = 3
+PAUSE_DIM_ALPHA = 0.45
+PAUSE_HINT = "Press SPACE to resume  |  Q / Esc to quit"
+PAUSE_HINT_SCALE = 0.6
+PAUSE_HINT_OFFSET_Y = 44
+
 
 def draw_hud(frame, metrics: Metrics, *, n_dets: int = 0,
              recording: bool = False, show_info: bool = True) -> None:
@@ -92,38 +123,39 @@ def draw_hud(frame, metrics: Metrics, *, n_dets: int = 0,
         ("Objects", f"{n_dets}", _C_OBJ),
     ]
     font = cv2.FONT_HERSHEY_SIMPLEX
-    fs, th, lh = 0.5, 1, 22
-    pad = 10
-    label_w = 84
-    panel_w = 230
+    fs, th, lh = HUD_TEXT_SCALE, HUD_TEXT_THICKNESS, HUD_ROW_HEIGHT
+    pad = HUD_PADDING
+    label_w = HUD_LABEL_WIDTH
+    panel_w = HUD_PANEL_WIDTH
     panel_h = pad * 2 + lh * len(rows)
-    x0, y0 = 12, 12
+    x0, y0 = HUD_PANEL_X, HUD_PANEL_Y
     overlay = frame.copy()
-    cv2.rectangle(overlay, (x0, y0), (x0 + panel_w, y0 + panel_h), (20, 20, 20), -1)
-    cv2.addWeighted(overlay, 0.55, frame, 0.45, 0, frame)
-    cv2.rectangle(frame, (x0, y0), (x0 + 4, y0 + panel_h), (0, 200, 255), -1)
-    y = y0 + pad + 14
+    cv2.rectangle(overlay, (x0, y0), (x0 + panel_w, y0 + panel_h), HUD_BG_COLOR, -1)
+    cv2.addWeighted(overlay, HUD_BG_ALPHA, frame, 1 - HUD_BG_ALPHA, 0, frame)
+    cv2.rectangle(frame, (x0, y0), (x0 + 4, y0 + panel_h), HUD_ACCENT_COLOR, -1)
+    y = y0 + pad + HUD_TEXT_BASELINE
     for label, value, color in rows:
-        cv2.putText(frame, label, (x0 + pad + 6, y), font, fs, _C_LABEL, th, cv2.LINE_AA)
+        cv2.putText(frame, label, (x0 + pad + HUD_TEXT_OFFSET_X, y), font, fs, _C_LABEL, th, cv2.LINE_AA)
         cv2.putText(frame, value, (x0 + pad + label_w, y), font, fs, color, th, cv2.LINE_AA)
         y += lh
     if recording:
         h, w = frame.shape[:2]
-        cv2.circle(frame, (w - 70, 24), 7, (0, 0, 255), -1)
-        cv2.putText(frame, "REC", (w - 56, 30), font, 0.6, (0, 0, 255), 2, cv2.LINE_AA)
+        cv2.circle(frame, (w - HUD_REC_DOT_OFFSET_X, HUD_REC_DOT_Y), HUD_REC_DOT_RADIUS, HUD_REC_COLOR, -1)
+        cv2.putText(frame, "REC", (w - HUD_REC_TEXT_OFFSET_X, HUD_REC_TEXT_Y), font,
+                   HUD_REC_TEXT_SCALE, HUD_REC_COLOR, HUD_REC_TEXT_THICKNESS, cv2.LINE_AA)
 
 
 def draw_pause(frame) -> None:
     import cv2
     overlay = frame.copy()
     cv2.rectangle(overlay, (0, 0), (frame.shape[1], frame.shape[0]), (0, 0, 0), -1)
-    cv2.addWeighted(overlay, 0.45, frame, 0.55, 0, frame)
+    cv2.addWeighted(overlay, PAUSE_DIM_ALPHA, frame, 1 - PAUSE_DIM_ALPHA, 0, frame)
     h, w = frame.shape[:2]
     font = cv2.FONT_HERSHEY_SIMPLEX
-    text, fscale, fth = "PAUSED", 1.8, 3
+    text, fscale, fth = PAUSE_TEXT, PAUSE_TEXT_SCALE, PAUSE_TEXT_THICKNESS
     (tw, tht), _ = cv2.getTextSize(text, font, fscale, fth)
     cx, cy = (w - tw) // 2, (h + tht) // 2
     cv2.putText(frame, text, (cx, cy), font, fscale, (255, 255, 255), fth, cv2.LINE_AA)
-    hint = "Press SPACE to resume  |  Q / Esc to quit"
+    hint = PAUSE_HINT
     (hw, _), _ = cv2.getTextSize(hint, font, 0.6, 1)
-    cv2.putText(frame, hint, ((w - hw) // 2, cy + 44), font, 0.6, (210, 210, 210), 1, cv2.LINE_AA)
+    cv2.putText(frame, hint, ((w - hw) // 2, cy + PAUSE_HINT_OFFSET_Y), font, PAUSE_HINT_SCALE, HUD_HINT_COLOR, 1, cv2.LINE_AA)

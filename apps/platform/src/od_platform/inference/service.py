@@ -18,6 +18,7 @@ from od_platform.runtime_config import build_infer_config
 from od_platform.visualization import BeautifyVisualizer, DrawStyle
 
 from .cancel import CancelToken
+from .defaults import DEFAULT_BATCH_SIZE, DEFAULT_MODEL_NAME, DEFAULT_RUN_NAME
 from .hooks import InferHooks
 from .pipeline_config import PipelineConfig, load_pipeline_config
 from .sinks import LocalFileSink, NullSink, OutputSink
@@ -141,7 +142,7 @@ class InferService:
             logger.info("=" * 60)
             logger.info(f"开始 YOLO 推理 (task={config.task})".center(60))
             logger.info("=" * 60)
-            raw_model = config.model or "yolo11n.pt"
+            raw_model = config.model or DEFAULT_MODEL_NAME
             raw_source = config.source
             logger.info(f"任务类型:    {config.task}")
             logger.info(f"输入源(声明): {raw_source!r}")
@@ -171,7 +172,7 @@ class InferService:
             else:
                 logger.info("美化已关闭, 使用 YOLO 原生 plot() 绘制.")
 
-            run_name = config.experiment_name or "predict"
+            run_name = config.experiment_name or DEFAULT_RUN_NAME
             output_dir = _resolve_output_dir(
                 RUNS_DIR / f"{config.task}_infer", run_name,
                 exist_ok=bool(getattr(config, "exist_ok", False)))
@@ -184,7 +185,9 @@ class InferService:
             want_show = bool(getattr(config, "show", False))
 
             if output_sink is None:
-                output_sink = LocalFileSink() if want_save else NullSink()
+                output_sink = LocalFileSink(
+                    filename=pipe.video_filename, fourcc=pipe.video_fourcc,
+                    default_fps=pipe.default_fps) if want_save else NullSink()
                 _sink_owned = True
             else:
                 _sink_owned = False
@@ -201,7 +204,7 @@ class InferService:
                 visualizer=visualizer, use_label_mapping=pipe.use_label_mapping,
                 style_overrides=pipe.style_overrides, names=model.names)
             raw_batch = getattr(config, "batch", 16)
-            batch_size = raw_batch if isinstance(raw_batch, int) and raw_batch >= 1 else 16
+            batch_size = raw_batch if isinstance(raw_batch, int) and raw_batch >= 1 else DEFAULT_BATCH_SIZE
 
             from .pipeline import ThreadedPipeline
             logger.info(f"执行引擎: 多线程流水线 (batch={batch_size})")
