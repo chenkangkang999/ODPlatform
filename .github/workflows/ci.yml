@@ -38,6 +38,12 @@ jobs:
         continue-on-error: true
         run: mypy apps/platform/src
 
+      - name: 生成 demo 数据 (pytest fixture 依赖)
+        run: |
+          python scripts/demo_data/make_demo.py
+          python scripts/demo_data/make_coco_demo.py
+          odp-transform demo || true
+
       - name: 测试 (pytest)
         run: pytest -q
 
