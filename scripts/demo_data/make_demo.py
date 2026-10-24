@@ -5,8 +5,6 @@
   3. c_050.xml 里埋了一个越界框(xmax=700 > 640)—— 留给 D4 质检抓,本课照常处理
 幂等:重跑覆盖同名文件。
 """
-import numpy as np
-import cv2
 from od_platform.common.paths import RAW_DATA_DIR
 
 ROOT = RAW_DATA_DIR / "demo"
@@ -23,16 +21,8 @@ OBJ = ('  <object><name>{n}</name><bndbox>'
        "<xmin>{a}</xmin><ymin>{b}</ymin><xmax>{c}</xmax><ymax>{d}</ymax>"
        "</bndbox></object>\n")
 
-
-def _make_jpg(path, seed):
-    """生成 640x480 随机噪声图(可被 cv2/ultralytics 读取)."""
-    rng = np.random.RandomState(seed)
-    img = rng.randint(0, 256, (480, 640, 3), dtype=np.uint8)
-    cv2.imwrite(str(path), img)
-
-
 for i in range(51):
-    _make_jpg(IMG / f"c_{i:03d}.jpg", seed=i)
+    (IMG / f"c_{i:03d}.jpg").write_bytes(b"")          # 空图:全流程不读像素
     objs = OBJ.format(n="head", a=40 + i % 100, b=60, c=160 + i % 100, d=200)
     (ANN / f"c_{i:03d}.xml").write_text(XML.format(objs=objs), encoding="utf-8")
 
@@ -46,6 +36,6 @@ for i in range(12):                                     # 稀有类:反光衣
     objs = (OBJ.format(n="head", a=40 + i, b=60, c=160 + i, d=200)
             + OBJ.format(n="反光衣", a=x, b=260, c=x + 100, d=420))
     (ANN / f"rare_{i:03d}.xml").write_text(XML.format(objs=objs), encoding="utf-8")
-    _make_jpg(IMG / f"rare_{i:03d}.jpg", seed=1000 + i)
+    (IMG / f"rare_{i:03d}.jpg").write_bytes(b"")
 
 print(f"演示数据就绪: {ROOT}  (63 图 / 75 标注, 其中 12 张含稀有类)")

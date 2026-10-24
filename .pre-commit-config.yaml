@@ -1,0 +1,20 @@
+repos:
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.6.9
+    hooks:
+      - id: ruff-format
+      - id: ruff
+        args: [--fix]
+
+  - repo: https://github.com/pre-commit/mirrors-mypy
+    rev: v1.11.2
+    hooks:
+      - id: mypy
+        args: ["apps/platform/src/"]
+        additional_dependencies: []
+
+  - repo: https://github.com/pytest-dev/pytest
+    rev: 8.3.3
+    hooks:
+      - id: pytest
+        args: ["apps/platform/tests/"]
