@@ -111,7 +111,8 @@ rect: false
 #   - 'mps': Mac M1/M2 GPU
 #   - [0,1] 或 '0,1': 多 GPU 训练
 #   - -1: 选择最空闲的 GPU
-device: null
+# 已锁定 0 号 GPU(本机仅一张 RTX 4060); 要回退自动选卡就改回 null
+device: 0
 
 # 是否启用 AMP(推荐开启)
 # 示例: True, False
