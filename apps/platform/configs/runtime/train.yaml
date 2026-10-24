@@ -103,8 +103,9 @@ rect: false
 #   - 'mps': Mac M1/M2 GPU
 #   - [0,1] 或 '0,1': 多 GPU 训练
 #   - -1: 选择最空闲的 GPU
-# 已锁定 0 号 GPU(本机仅一张 RTX 4060); 要回退自动选卡就改回 null
-device: 0
+# 保持 null = 自动选卡(有 CUDA 用 GPU, 否则 CPU);
+# 不要在此写死显卡编号 —— 那是机器相关取值。临时固定请用 CLI: --device 0
+device: null
 
 # 是否启用 AMP(推荐开启)
 # 示例: True, False
