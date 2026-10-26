@@ -1,0 +1,54 @@
+# ============================================================
+# 足球AI辅助裁判 —— 运行配置
+# 所有参数可调，不硬编码在代码里
+# ============================================================
+
+# ---------- 检测层 (YOLO) ----------
+detection:
+  model: models/pretrained/yolo11x-football.pt
+  conf_threshold: 0.25
+  iou_threshold: 0.45
+  classes: [0, 1]          # 0=player, 1=football
+  imgsz: 1280
+
+# ---------- 跟踪层 (BoT-SORT) ----------
+tracking:
+  backend: botsort          # botsort | bytetrack
+  min_confidence: 0.25
+  iou_threshold: 0.45
+  max_age: 30               # 丢失后保持帧数
+  min_hits: 3               # 命中几帧才确认
+
+# ---------- 几何层 (Homography) ----------
+homography:
+  # 画面4个角点（像素坐标）——按实际球场画面标定
+  src_points:
+    - [0, 0]
+    - [1920, 0]
+    - [1920, 1080]
+    - [0, 1080]
+  # 标准足球场尺寸（米）
+  field_length: 105
+  field_width: 68
+
+# ---------- 规则引擎 ----------
+rules:
+  offside_margin: 1.0              # 越位容差（米）
+  collision_distance_m: 2.0         # 冲撞距离阈值
+  ball_assignment_tolerance_m: 0.5   # 球归属距离
+  goal_line_x_tolerance: 0.3        # 进球线容差
+
+# ---------- 动作识别 (VideoMAE V2) ----------
+action_recognition:
+  model_name: videomae_v2_base
+  checkpoint: models/pretrained/videomae_v2_football.pt
+  num_classes: 10
+  confidence_threshold: 0.6
+  clip_length: 16          # 每段视频帧数
+
+# ---------- 输出 ----------
+output:
+  save_video: true
+  save_json: true
+  draw_tracks: true
+  draw_homography_overlay: false
