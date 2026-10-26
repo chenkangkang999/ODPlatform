@@ -27,10 +27,10 @@ class RuleEngine:
     homography: FieldHomography
     config: dict[str, Any] = field(default_factory=dict)
 
-    # 默认阈值（可被配置覆盖）
-    offside_margin: float = float(field(default=1.0))       # 越位容差（米）
-    collision_dist: float = float(field(default=2.0))      # 冲撞距离阈值（米）
-    ball_tol: float = float(field(default=0.5))            # 球归属距离（米）
+    # 默认阈值（可被 __post_init__ 里的 config 覆盖）
+    offside_margin: float = 1.0       # 越位容差（米）
+    collision_dist: float = 2.0       # 冲撞距离阈值（米）
+    ball_tol: float = 0.5             # 球归属距离（米）
 
     def __post_init__(self):
         self.offside_margin = float(self.config.get("offside_margin", 1.0))

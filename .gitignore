@@ -53,8 +53,8 @@ data/processed/
 !data/README.md
 !data/.gitkeep
 
-# 模型权重不进git
-models/pretrained/*.pt
+# 模型权重不进git（含子目录、.pt/.safetensors/.bin）
+models/pretrained/
 models/trained/*.pt
 models/trained/*/
 !models/pretrained/README.md
