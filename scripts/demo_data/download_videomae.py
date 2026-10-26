@@ -1,14 +1,28 @@
-"""经 hf-mirror 下载 VideoMAE Kinetics 预训练模型（用于动作识别）。"""
+"""Download optional VideoMAE weights to a configurable, ignored directory."""
+import argparse
 import os
-os.environ["HF_ENDPOINT"] = "https://hf-mirror.com"
-from huggingface_hub import snapshot_download
+from pathlib import Path
 
-repo_id = "MCG-NJU/videomae-base-finetuned-kinetics"
-local = r"D:\ODPlatform\models\pretrained\videomae-base-kinetics"
-print(f"开始下载 {repo_id} -> {local}", flush=True)
-path = snapshot_download(
-    repo_id=repo_id,
-    local_dir=local,
-    allow_patterns=["*.json", "*.bin", "*.safetensors", "*.txt"],
-)
-print("下载完成:", path, flush=True)
+from od_platform.common.paths import PRETRAINED_MODELS_DIR
+
+
+def main(argv=None, *, downloader=None):
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--repo", default="MCG-NJU/videomae-base-finetuned-kinetics")
+    parser.add_argument("--output", type=Path, default=PRETRAINED_MODELS_DIR / "videomae-base-kinetics")
+    parser.add_argument("--endpoint", default=os.environ.get("HF_ENDPOINT", "https://hf-mirror.com"))
+    args = parser.parse_args(argv)
+    os.environ["HF_ENDPOINT"] = args.endpoint
+    if downloader is None:
+        from huggingface_hub import snapshot_download
+        downloader = snapshot_download
+    output = args.output.resolve()
+    print(f"开始下载 {args.repo} -> {output}", flush=True)
+    path = downloader(repo_id=args.repo, local_dir=str(output),
+                      allow_patterns=["*.json", "*.bin", "*.safetensors", "*.txt"])
+    print("下载完成:", path, flush=True)
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
