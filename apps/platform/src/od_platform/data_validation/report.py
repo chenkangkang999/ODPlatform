@@ -19,6 +19,9 @@ class ValidationReport:
     snapshot: Any                                    # DatasetSnapshot(避免循环 import)
     results: List[CheckResult] = field(default_factory=list)
     duration_seconds: float = 0.0
+    # 与上一次同数据集报告的对比; 首次质检为 None。
+    # 类型是 compare.Comparison —— 这里用 Any 是为了让报告层不依赖对比模块。
+    comparison: Any = None
 
     @property
     def overall_severity(self) -> str:
@@ -28,7 +31,7 @@ class ValidationReport:
         return max((r.severity for r in self.results), key=CheckSeverity.rank)
 
     def to_dict(self) -> Dict[str, Any]:
-        return {
+        payload = {
             "run_id": self.run_id,
             "yaml_path": str(self.snapshot.yaml_path),
             "overall_severity": self.overall_severity,
@@ -39,6 +42,9 @@ class ValidationReport:
                 for r in self.results
             ],
         }
+        if self.comparison is not None:
+            payload["comparison"] = self.comparison.to_dict()
+        return payload
 
     def write_json(self, path: Path) -> None:
         path.parent.mkdir(parents=True, exist_ok=True)
@@ -69,3 +75,7 @@ class ValidationReport:
             log.info("样本数: %s  策略: %s  种子: %s",
                      fp.details.get("n_samples"), fp.details.get("strategy"),
                      fp.details.get("seed"))
+        if self.comparison is not None:
+            log.info("-" * 60)
+            for line in self.comparison.render_lines():
+                log.info(line)
