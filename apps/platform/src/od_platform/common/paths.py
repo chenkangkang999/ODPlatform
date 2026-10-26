@@ -257,6 +257,23 @@ def get_run_output_dir(task: str, name: str, run_id: str | None = None,
     return project / name
 
 
+# ============================================================
+# 足球检测数据集位置
+#
+# 一份数据三种视图（详见 scripts/demo_data/coco_to_yolo.py 的说明）:
+#   <FOOTBALL_DATASET_DIR>/<split>/*.jpg                  图片（唯一副本, 原地不动）
+#   <FOOTBALL_DATASET_DIR>/<split>/*.txt                  YOLO 标签（转换脚本生成）
+#   <FOOTBALL_DATASET_DIR>/<split>/_annotations.coco.json COCO 标注（原始导出）
+#   FOOTBALL_DATA_YAML                                    YOLO 训练入口
+#
+# 为什么要有这组常量: 训练脚本里写死 "soccer/football-yolo/data.yaml" 时,
+# 数据集一改名/一搬家, 默认参数就静默指向不存在的路径 —— 已经发生过一次。
+# ============================================================
+SOCCER_RAW_DIR: Path = RAW_DATA_DIR / "soccer"
+FOOTBALL_DATASET_DIR: Path = SOCCER_RAW_DIR / "football-det" / "data"
+FOOTBALL_DATA_YAML: Path = SOCCER_RAW_DIR / "football-det" / "data.yaml"
+
+
 if __name__ == "__main__":
     print(f"ROOT_DIR (workspace) = {ROOT_DIR}")
     print(f"APP_DIR  (platform)  = {APP_DIR}")

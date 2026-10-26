@@ -7,6 +7,7 @@ import sys
 from typing import Any, Dict
 
 from od_platform.common import paths, refs
+from od_platform.common.config_utils import parse_batch_arg
 from od_platform.common.logging_utils import get_logger
 from od_platform.common.naming import run_stem
 from od_platform.common.paths import RUNTIME_CONFIGS_DIR
@@ -26,7 +27,8 @@ def _build_parser() -> argparse.ArgumentParser:
     p.add_argument("--data", default=None, help="数据集引用: 'demo'/路径")
     p.add_argument("--model", default=None, help="模型引用: 'yolov8n'/'yolov8n.pt'/路径")
     p.add_argument("--epochs", type=int, default=None)
-    p.add_argument("--batch", type=float, default=None, help="int 或 float(<1)")
+    p.add_argument("--batch", type=parse_batch_arg, default=None,
+                   help="int 或 float(<1); 类型写死成 float 会把 --batch 4 变成 4.0 而被校验拒掉")
     p.add_argument("--imgsz", type=int, default=None)
     p.add_argument("--device", default=None, help="'0'/'0,1'/'cpu'")
     p.add_argument("--experiment-name", dest="experiment_name", default=None,

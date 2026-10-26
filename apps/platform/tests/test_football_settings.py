@@ -82,7 +82,8 @@ def test_real_config_matches_the_dataclass_without_unknown_keys(caplog):
         settings = DetectionSettings.load()
     assert "无法识别的配置键" not in caplog.text, caplog.text
     # 与 football.yaml 里写的值一一对应（改了 yaml 就要改这里, 逼着人保持同步）
-    assert (settings.conf, settings.iou, settings.imgsz) == (0.25, 0.7, 960)
+    # 注意与 dataclass 默认值(960)不同: 本项目配置把推理尺寸调到了 1280 以匹配训练。
+    assert (settings.conf, settings.iou, settings.imgsz) == (0.25, 0.7, 1280)
     assert (settings.max_det, settings.stride, settings.max_frames) == (300, 1, 1500)
     assert settings.tracker == "botsort.yaml"
 

@@ -97,6 +97,26 @@ def override_settings(instance: T, overrides: Optional[Mapping[str, Any]]) -> T:
     return replace(instance, **changes) if changes else instance
 
 
+def parse_batch_arg(value: Any) -> Any:
+    """把命令行的 ``--batch`` 解析成配置要的类型。
+
+    batch 有两种合法形态, 必须区分开否则会被配置校验拒掉:
+      · 整数   —— 固定批大小(-1 = 自动, 正数 = 固定值)
+      · (0,1]  —— 显存利用率(如 0.6)
+
+    踩过的坑: 把 argparse 的 type 写成 float, 于是 ``--batch 4`` 变成 4.0,
+    配置层报 "batch 为 float 时必须在 (0, 1] 范围内" —— 看起来像参数写错,
+    实际是类型解析错。
+    """
+    if isinstance(value, (int, float)) or value is None:
+        return value
+    text = str(value).strip()
+    try:
+        return int(text)
+    except ValueError:
+        return float(text)
+
+
 def report_unknown_keys(where: str, keys: Sequence[str]) -> None:
     """把不认识的配置键报出来（拼错键名不该静默生效一半）。"""
     if keys:
