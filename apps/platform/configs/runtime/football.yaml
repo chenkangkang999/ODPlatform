@@ -1,14 +1,19 @@
 # ============================================================
-# 足球AI辅助裁判 —— 运行配置（几何 / 跟踪 / 规则的唯一数据源）
+# 足球AI辅助裁判 —— 运行配置（几何 / 跟踪 / 检测 / 规则的唯一数据源）
 #
-# ★ 读取方式（2026-10-26 修正）:
-#   本文件此前【从未被加载过】—— jobs.py 不传 football_config, 于是规则引擎
-#   永远用代码里的默认值。现在 PitchAnalyzer 在 config=None 时会自动读取本文件,
-#   所以下面每一节都是真正生效的。
+# ★ 唯一加载口: od_platform.common.football_config（路径与读法只定义一次）
+# ★ 本文件每一节都是【真正生效】的:
+#     pitch / calibration / homography / rules / analyzer  → GeometricSettings
+#     tracking                                             → TrackingSettings
+#     detection                                            → DetectionSettings
+#     action_recognition                                   → ActionRecognitionSettings
 #
-# ★ 代码里不写死任何阈值: 本文件的每一项都对应一个 dataclass 字段
-#   （geometric/settings.py、tracking/settings.py）。想知道"能调什么",
-#   看那两个文件即可; 想知道"当前按什么在跑", 看结果里的 settings 审计块。
+# ★ 代码里不写死任何阈值: 本文件的每一项都对应一个 dataclass 字段。
+#   想知道"能调什么", 看对应子系统的 settings.py; 想知道"当前按什么在跑",
+#   看结果里的 settings 审计块。
+#
+# ★ 运行期覆盖: Web 任务的 request.json 可覆盖 detection 的同名字段
+#   （conf / iou / imgsz / max_det / stride / max_frames / device / tracking）。
 # ============================================================
 
 # ---------- 场地尺寸（默认 IFAB 国际比赛标准场地）----------
@@ -78,7 +83,13 @@ analyzer:
   possession_memory_frames: 15      # 球归属结论保留多少帧
   min_direction_delta_m: 1.0        # 推断进攻方向时球至少偏离多少米
 
-# ---------- 跟踪层 ----------
+# ---------- 跟踪层（几何层内部使用的跟踪器）----------
+# ★ 注意: 这里配置的【不是】对外产出 track_id 的那个跟踪器。
+#   · 对外（frames.jsonl 的 track_id、annotated.png 上画的 ID）用的是
+#     ultralytics 的 BoT-SORT, 参数在 configs/runtime/botsort.yaml（由
+#     detection.tracker 指向）。
+#   · 本节配置的是几何层内部的 MultiObjectTracker, 只服务越位/接触/球归属的
+#     时序判断, 不对外暴露 ID。
 tracking:
   backend: botsort                  # botsort | bytetrack（两者共用两阶段关联实现）
   min_confidence: 0.25              # 进入跟踪的最低检测置信度
@@ -107,24 +118,38 @@ tracking:
     aspect_velocity_std: 0.00001
     measurement_aspect_std: 0.1
 
-# ---------- 检测层（说明性: 实际权重与参数由 Web 任务的 request.json 传入）----------
+# ---------- 检测层（真正生效: DetectionSettings）----------
+# ★ 此前这些值写死在 bridge_worker.py 里, 本节形同虚设。现在:
+#     · iou 不再是硬编码的 0.7, imgsz 不再是硬编码的 960;
+#     · 本节的值是默认值, request.json 可逐项覆盖。
 detection:
-  # 仓库里真实存在的权重; 此前这里写的 yolo11x-football.pt 并不存在
-  model: models/trained/football_yolo/weights/best.pt
-  conf_threshold: 0.25
-  iou_threshold: 0.45
+  conf: 0.25                        # 进入结果的置信度下限（范围 0.001~0.99）
+  iou: 0.7                          # NMS 的 IoU 阈值（范围 (0, 1]）
+  imgsz: 960                        # 推理输入边长（320~1536 且必须是 32 的倍数）
+  max_det: 300                      # 每帧最多保留多少个框
+  stride: 1                         # 视频抽帧步长（1~30）
+  max_frames: 1500                  # 单任务处理帧数上限
+  device: cpu                       # cpu | 0 | 0,1
+  tracking: true                    # 视频是否开启多目标跟踪
+  # 跟踪器配置。若 configs/runtime/ 下存在同名文件就用它（见 botsort.yaml）,
+  # 否则把名字交给 ultralytics, 用它自带的 cfg/trackers/<名字>。
+  tracker: botsort.yaml
   classes: [0, 1]                   # 0=player, 1=football（注意 COCO 编码里是反的）
-  imgsz: 1280
+  model: models/trained/football_yolo/weights/best.pt   # 说明性; 实际由 Web 侧 FOOTBALL_MODEL_PATH 决定
 
-# ---------- 动作识别（说明性: 实际由 Web 侧 FOOTBALL_ACTION_CKPT 控制）----------
+# ---------- 动作识别（真正生效: ActionRecognitionSettings）----------
+# ★ 能力边界（如实记录, 别当成已支持）:
+#   · 实际加载 videomae-base-finetuned-kinetics = VideoMAE V1 base + Kinetics-400（400 类）;
+#   · model_name 只是分派键, 加载哪个模型由 checkpoint 决定;
+#   · slowfast 未实现 —— 传进来只会降级为空结果。
 action_recognition:
-  # 此前写的 videomae_v2_football.pt 并不存在; 现有的是 Kinetics 预训练的 VideoMAE
-  model_name: videomae_v2_base
+  model_name: videomae              # 分派键; 已实现 videomae; slowfast/custom 仅预留
   checkpoint: models/pretrained/videomae-base-kinetics
-  confidence_threshold: 0.6
-  clip_length: 16
+  clip_length: 16                   # 送入模型的帧数
+  confidence_threshold: 0.3         # 低于此值不产出动作事件
+  top_k: 5                          # 只看置信度最高的前 K 类
 
-# ---------- 输出（说明性: 实际输出由 odp-infer / bridge_worker 决定）----------
+# ---------- 输出（说明性: odp-infer 走 infer_pipeline.yaml, 本仓库不读本节）----------
 output:
   save_video: true
   save_json: true

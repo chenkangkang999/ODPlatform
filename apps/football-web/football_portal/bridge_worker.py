@@ -27,6 +27,17 @@ SAFE_METADATA = ("run_id", "class_names", "data_fingerprint", "content_fingerpri
                  "model_version", "development_only", "purpose", "execution", "dataset_limitations")
 
 
+def _ensure_platform(platform_root) -> None:
+    """把 ODPlatform 的 src 挂到 sys.path（幂等）。
+
+    DetectionSettings / ActionRecognitionSettings 都住在 od_platform 里，
+    所以参数装配前必须先能 import 到它。
+    """
+    root = Path(platform_root) / "apps/platform/src" if platform_root else None
+    if root and root.is_dir() and str(root) not in sys.path:
+        sys.path.insert(0, str(root))
+
+
 def dump(path: Path, value: dict) -> None:
     temporary = path.with_suffix(path.suffix + ".tmp")
     temporary.write_text(json.dumps(value, ensure_ascii=False, allow_nan=False, indent=2), encoding="utf-8")
@@ -129,23 +140,26 @@ class PitchAnalyzer:
         return _Implementation(width, height, platform_root, config, media_path=media_path)
 
 
-def _load_action_recognizer(platform_root: str, request: dict):
-    """按需加载动作识别器；无 checkpoint 时返回 None（降级）。"""
-    checkpoint = request.get("action_checkpoint") or os.environ.get("FOOTBALL_ACTION_CKPT", "")
-    if not checkpoint:
-        return None
-    try:
-        root = Path(platform_root) / "apps/platform/src" if platform_root else None
-        if root and root.is_dir():
-            sys.path.insert(0, str(root))
-        from od_platform.action_recognition.classifier import ActionRecognizer
+def _load_action_recognizer(platform_root: str, request: dict, app_config: dict):
+    """按需加载动作识别器；无 checkpoint 时返回 None（降级）。
 
-        recognizer = ActionRecognizer({
-            "model_name": "videomae_v2_base",
-            "checkpoint": checkpoint,
-            "clip_length": int(request.get("action_clip_length", 16)),
-            "confidence_threshold": float(request.get("action_conf", 0.3)),
+    参数来自 football.yaml 的 action_recognition 节（request.json 可覆盖
+    checkpoint / clip_length / 置信度）—— 代码里不再写死 model_name 与阈值。
+    """
+    try:
+        _ensure_platform(platform_root)
+        from od_platform.action_recognition.classifier import ActionRecognizer
+        from od_platform.action_recognition.settings import ActionRecognitionSettings
+        from od_platform.common.config_utils import override_settings
+
+        settings = override_settings(ActionRecognitionSettings.from_app_config(app_config), {
+            "checkpoint": request.get("action_checkpoint") or os.environ.get("FOOTBALL_ACTION_CKPT", ""),
+            "clip_length": request.get("action_clip_length"),
+            "confidence_threshold": request.get("action_conf"),
         })
+        if not settings.checkpoint:
+            return None
+        recognizer = ActionRecognizer(settings=settings)
         return recognizer if recognizer.ready else None
     except Exception as exc:  # noqa: BLE001
         print(f"[Action] 动作识别不可用，降级: {exc}", file=sys.stderr)
@@ -192,11 +206,21 @@ def run_request(request: dict, *, detector=None) -> dict:
     output.mkdir(parents=True, exist_ok=True)
     if (output / "result.json").exists():
         raise FileExistsError("结果已存在，拒绝覆盖")
-    conf, iou = float(request.get("conf", .25)), .7
-    imgsz, stride = int(request.get("imgsz", 960)), int(request.get("stride", 1))
-    max_frames = int(request.get("max_frames", 1500))
-    if not math.isfinite(conf) or not 0.001 <= conf <= .99 or not 320 <= imgsz <= 1536 or imgsz % 32 or not 1 <= stride <= 30 or max_frames < 1:
-        raise ValueError("推理参数超出允许范围")
+    # 推理参数：默认值来自 football.yaml 的 detection 节，request.json 可逐项覆盖。
+    # 合法性护栏（conf/iou/imgsz/stride/max_det/max_frames 的范围）定义在
+    # DetectionSettings.__post_init__ 里 —— 本文件不再出现这些数字。
+    _ensure_platform(request.get("platform_root", ""))
+    from od_platform.common.config_utils import override_settings
+    from od_platform.common.football_config import coerce_config
+    from od_platform.detection.settings import DetectionSettings
+
+    app_config = coerce_config(request.get("football_config"))
+    try:
+        params = override_settings(DetectionSettings.from_app_config(app_config), request)
+    except (TypeError, ValueError) as exc:
+        raise ValueError(f"推理参数超出允许范围（{exc}）") from None
+    conf, iou, imgsz = params.conf, params.iou, params.imgsz
+    stride, max_frames, max_det = params.stride, params.max_frames, params.max_det
     metadata = {}
     metadata_path = request.get("metadata_path")
     if metadata_path and Path(metadata_path).is_file():
@@ -207,7 +231,7 @@ def run_request(request: dict, *, detector=None) -> dict:
     metadata = {key: metadata[key] for key in SAFE_METADATA if key in metadata}
     os.environ["YOLO_CONFIG_DIR"] = str(output / "ultralytics-settings")
     is_image = path.suffix.lower() in IMAGE_EXTENSIONS
-    use_tracking = (not is_image) and bool(request.get("tracking", True))
+    use_tracking = (not is_image) and params.tracking
     start = time.perf_counter()
     injected = detector is not None
     if detector is None:
@@ -219,16 +243,16 @@ def run_request(request: dict, *, detector=None) -> dict:
         std_names = {ALIASES.get(str(n).strip().lower(), str(n).strip().lower()) for n in names}
         if not std_names.issubset(set(CLASSES)) or not ({"player", "ball"} & std_names):
             raise ValueError("该权重不是足球检测模型（需要球员/球类别），请检查 FOOTBALL_MODEL_PATH")
-        device = request.get("device", "cpu")
+        device = params.device
 
         def detector(image):
             if use_tracking:
-                result = model.track(image, imgsz=imgsz, conf=conf, iou=iou, max_det=300,
-                                     device=device, persist=True, tracker="botsort.yaml",
+                result = model.track(image, imgsz=imgsz, conf=conf, iou=iou, max_det=max_det,
+                                     device=device, persist=True, tracker=params.resolved_tracker(),
                                      verbose=False)[0]
             else:
                 result = model.predict(image, imgsz=imgsz, conf=conf, iou=iou,
-                                       max_det=300, device=device, verbose=False)[0]
+                                       max_det=max_det, device=device, verbose=False)[0]
             return _extract_boxes(result, use_tracking), image
 
     frames, writer, first_info = [], None, None
@@ -246,9 +270,10 @@ def run_request(request: dict, *, detector=None) -> dict:
                 height, width = image.shape[:2]
                 if pitch is None and not is_image:
                     pitch = PitchAnalyzer(width, height, str(request.get("platform_root", "")),
-                                          request.get("football_config"), media_path=path)
+                                          app_config, media_path=path)
                 if recognizer is None and not is_image and not injected:
-                    recognizer = _load_action_recognizer(str(request.get("platform_root", "")), request)
+                    recognizer = _load_action_recognizer(
+                        str(request.get("platform_root", "")), request, app_config)
 
                 raw_boxes, _ = detector(image)
                 frame = normalize_frame({"frame_index": info["frame_index"], "timestamp": info["timestamp"],
@@ -354,7 +379,9 @@ def run_request(request: dict, *, detector=None) -> dict:
                          "height": first_info["height"], "fps": first_info["fps"], "reader": first_info["reader"],
                          "truncated": truncated},
               "model": {"id": request.get("model_id"), "name": request.get("model_label") or weight.stem, "sha256": digest, "metadata": metadata},
-              "parameters": {"confidence": conf, "imgsz": imgsz, "stride": stride, "iou": iou},
+              "parameters": {"confidence": conf, "imgsz": imgsz, "stride": stride, "iou": iou,
+                             "max_det": max_det, "tracker": params.resolved_tracker(),
+                             "device": params.device},
               "frames": frames, "preview": preview, "boxes": preview["boxes"], "best_class": best["cls"] if best else None,
               "best_conf": best["conf"] if best else None, "analysis": analysis, "artifacts": artifacts,
               "events": events,

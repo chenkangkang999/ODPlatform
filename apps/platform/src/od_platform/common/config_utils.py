@@ -21,7 +21,7 @@
 from __future__ import annotations
 
 import logging
-from dataclasses import fields, is_dataclass
+from dataclasses import fields, is_dataclass, replace
 from typing import Any, Dict, Iterable, List, Mapping, Optional, Sequence, Type, TypeVar
 
 logger = logging.getLogger(__name__)
@@ -75,6 +75,26 @@ def build_settings(
             continue
         overrides[key] = _coerce(field.default, value, key)
     return cls(**overrides)
+
+
+def override_settings(instance: T, overrides: Optional[Mapping[str, Any]]) -> T:
+    """用 overrides 覆盖 dataclass 实例的同名字段, 返回新实例。
+
+    用途: 运行期覆盖（Web 任务 request.json / 环境变量）。
+    · 只认与字段同名的键, 其余【静默跳过】—— 因为调用方常直接把整个请求 dict 递进来,
+      里面本来就有 input_path / output_dir 这类不相干的键;
+    · 值为 None 的键跳过（"没传"不等于"要设成空"）;
+    · 类型按字段当前值转换, 转换结果会重新走一遍 __post_init__ 校验。
+    """
+    if not isinstance(overrides, Mapping) or not overrides:
+        return instance
+    known = {field.name: field for field in fields(instance)}
+    changes: Dict[str, Any] = {}
+    for key, value in overrides.items():
+        if key not in known or value is None:
+            continue
+        changes[key] = _coerce(getattr(instance, key), value, key)
+    return replace(instance, **changes) if changes else instance
 
 
 def report_unknown_keys(where: str, keys: Sequence[str]) -> None:

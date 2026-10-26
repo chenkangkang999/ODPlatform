@@ -1,0 +1,41 @@
+# ============================================================
+# BoT-SORT 跟踪器配置（ultralytics 用）
+#
+# ★ 为什么这个文件在本仓库里
+#   此前跟踪参数完全来自 ultralytics 自带的 cfg/trackers/botsort.yaml,
+#   本仓库【一行都没有】—— 也就是说"多目标跟踪的参数"是别人的默认值,
+#   我们既没记录、也没法调。
+#   现在 detection.tracker 默认写 "botsort.yaml", DetectionSettings.resolved_tracker()
+#   会发现本文件存在并优先使用它, 于是这些参数进了版本管理。
+#   （绝对路径在运行期算出来, 不写进任何被 git 跟踪的文件 —— 否则 CI 的硬编码守卫会拦。）
+#
+# ★ 下面就是【当前实际跑的那一套值】, 与 ultralytics 内置默认一致。
+#   改这里即可生效, 不用动 ultralytics 的安装目录。
+#
+# ★ 注意区分两个跟踪器:
+#   本文件 = ultralytics 的 BoT-SORT, 它产出 frames.jsonl 里的 track_id,
+#            也是 annotated.png 上画出来的 ID;
+#   football.yaml 的 tracking 节 = 几何层内部的 MultiObjectTracker,
+#            只服务越位/接触/球归属的时序判断, 不对外暴露 ID。
+# ============================================================
+
+tracker_type: botsort
+
+# ---- 两阶段关联阈值 ----
+track_high_thresh: 0.25      # 第一阶段（高分框）匹配阈值
+track_low_thresh: 0.1        # 第二阶段（低分框）恢复阈值; 调高更稳, 调低找回更多
+new_track_thresh: 0.25       # 低于此值不新建轨迹; 调高可减少假轨迹
+track_buffer: 30             # 轨迹丢失后保留多少帧; 调高抗遮挡, 但 ID 切换风险上升
+match_thresh: 0.8            # 关联相似度阈值（IoU/代价）; 与检测质量一起调
+fuse_score: True             # 把检测分数融进匹配代价, 让弱检测更稳
+
+# ---- BoT-SORT 特有 ----
+# 全局运动补偿: 转播镜头会平移/缩放, 靠它把相机运动从目标运动里扣掉。
+# sparseOptFlow | orb | sift | ecc | none
+gmc_method: sparseOptFlow
+
+# ---- ReID（外观特征）----
+proximity_thresh: 0.5        # 认为两条轨迹"邻近"的最小 IoU
+appearance_thresh: 0.8       # 外观相似度下限; 调高可减少身份互换
+with_reid: False             # 未启用: 需要额外模型与算力
+model: auto                  # ReID 模型; auto = 复用检测器的特征

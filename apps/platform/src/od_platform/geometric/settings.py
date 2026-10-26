@@ -154,8 +154,14 @@ class GeometrySettings:
 
 
 def default_config_path() -> Path:
-    from od_platform.common import paths
-    return paths.RUNTIME_CONFIGS_DIR / "football.yaml"
+    """football.yaml 的默认位置。
+
+    真正的定义在 :mod:`od_platform.common.football_config` —— 四个子系统
+    (geometry / tracking / detection / action_recognition) 必须指向同一个文件,
+    所以路径只在那里写一次。这里保留同名入口是为了兼容既有调用方。
+    """
+    from od_platform.common.football_config import default_config_path as canonical
+    return canonical()
 
 
 def _build(cls, config: Dict[str, Any], section: str, where: str,
