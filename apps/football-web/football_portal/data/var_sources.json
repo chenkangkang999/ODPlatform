@@ -1,0 +1,440 @@
+{
+  "as_of": "2026-10-26",
+  "datasets": [
+    {
+      "id": "soccernet_mvfouls",
+      "title": "SoccerNet-MVFouls：多视角犯规与判牌参考",
+      "event_types": [
+        "foul",
+        "card"
+      ],
+      "source_url": "https://www.soccer-net.org/tasks/multi-view-foul-recognition",
+      "download_url": "https://huggingface.co/datasets/SoccerNet/SN-MVFouls-2025",
+      "scale": "作者README列3901个动作：2916训练、411验证、301测试、273隐藏挑战；每个动作至少现场与一个回放视角；HF约21.3GB",
+      "labels": [
+        "犯规/无犯规与无牌/黄牌/红牌4级",
+        "8类动作：站立铲抢、铲抢、拉扯、推人、争抢、假摔、高抬腿、肘击",
+        "10种动作属性，视频片段与JSON"
+      ],
+      "access": "HF公开包；内部转播片段仍需SoccerNet NDA及解压密码。访问流程以官方最新Data页为准，未代签或申请",
+      "license": "HF卡列GPL-3.0；视频仍有NDA条件，不能以代码许可证替代录像授权",
+      "notes": "优先级最高，适合冲撞/犯规复核与判牌建议。参考论文VARS/CVPR2023，https://arxiv.org/abs/2304.04617 。原挑战主要2014–2017赛季，不是2026最新比赛；应显示模型建议与实际裁判决定两个字段",
+      "downloaded": false,
+      "verified_on": "2026-10-26"
+    },
+    {
+      "id": "soccernet_action_spotting",
+      "title": "SoccerNet Action Spotting：17类事件时间线",
+      "event_types": [
+        "offside",
+        "foul",
+        "goal",
+        "card"
+      ],
+      "source_url": "https://www.soccer-net.org/tasks/action-spotting",
+      "download_url": "https://huggingface.co/datasets/SoccerNet/SN-Labels",
+      "scale": "500场完整转播、另50场challenge；25fps的720p/224p视频；部分任务有2fps预提取特征",
+      "labels": [
+        "17类单时间戳事件",
+        "进球、越位、犯规、黄牌、红牌、两黄变红等",
+        "Labels-v2.json；原视频为上下半场mkv"
+      ],
+      "access": "标签库SN-Labels公开；原视频SoccerNet_raw_HQ需HF账号、申请与NDA审批。旧Google NDA表已弃用，见https://www.soccer-net.org/data",
+      "license": "公共标签与受保护视频的访问范围不同；视频按SoccerNet NDA使用，本次未核验可商用授权",
+      "notes": "事件检索和复核入口的第一优先。Goal/Offside单时间戳不能当作门线3D真值、精确越位线或出脚帧真值。官方包说明https://github.com/SoccerNet/SoccerNet 明确SN-Labels public与原录像gated",
+      "sample_label_url": "https://huggingface.co/datasets/SoccerNet/SN-Labels/resolve/main/england_epl/2014-2015/2015-02-21%20-%2018-00%20Chelsea%201%20-%201%20Burnley/Labels-v2.json",
+      "sample_label_verification": "HF官方文件树已核验此文件存在，37609字节；本机resolve/raw正文请求遇到SSL EOF，未成功读取或保存正文",
+      "downloaded": false,
+      "verified_on": "2026-10-26"
+    },
+    {
+      "id": "soccernet_calibration",
+      "title": "SoccerNet Calibration / Field Localization：场地与球门几何",
+      "event_types": [
+        "offside",
+        "goal"
+      ],
+      "source_url": "https://www.soccer-net.org/tasks/camera-calibration",
+      "download_url": "https://huggingface.co/datasets/SoccerNet/SN-Calibration-2023",
+      "scale": "20,028张事件及回放图片，另2104张challenge；HF约3.98GB",
+      "labels": [
+        "球场线条/圆弧/球门部件",
+        "相机参数及重投影评估任务",
+        "图片与几何标注"
+      ],
+      "access": "官方HF文件页存在，viewer当前解析报错；具体文件访问和协议从SoccerNet官方Data页核验",
+      "license": "当前HF卡未给出完整许可说明，不能承诺商用或免协议",
+      "notes": "仅为VAR几何辅助基础，不是越位或门线判罚数据。还需要出脚时刻、可用于越位的身体部位、球队、倒数第二防守队员；单目透视/遮挡不足时应输出证据不足",
+      "downloaded": false,
+      "verified_on": "2026-10-26"
+    },
+    {
+      "id": "soccernet_gsr",
+      "title": "SoccerNet-GSR：球员身份、球队和场地位置",
+      "event_types": [
+        "offside",
+        "foul",
+        "card"
+      ],
+      "source_url": "https://www.soccer-net.org/tasks/game-state-reconstruction",
+      "download_url": "https://huggingface.co/datasets/SoccerNet/SN-GSR-2025",
+      "scale": "论文/代码总200段30秒序列；公开划分57训练、59验证、50测试；1080p主镜头；HF约35.1GB",
+      "labels": [
+        "人员位置/轨迹、角色、球队和球衣号码",
+        "场地线条和几何",
+        "Labels-GameState.json，官方建议版本至少1.3"
+      ],
+      "access": "官方HF有公开图像预览和下载入口；本次未实际下载",
+      "license": "HF卡标GPL-3.0，具体转播素材使用条件仍应与官方核对",
+      "notes": "适合参与者跟踪、身份归属及小地图，辅助回答谁参与冲撞/谁受牌；本身不提供出牌动作、判罚或越位真值。勿把200总段数混成200个公开有标注训练样本。论文https://arxiv.org/abs/2404.11335",
+      "downloaded": false,
+      "verified_on": "2026-10-26"
+    },
+    {
+      "id": "soccernet_ball_actions",
+      "title": "SoccerNet Ball Action Spotting：射门、抢断和进球片段",
+      "event_types": [
+        "goal",
+        "foul"
+      ],
+      "source_url": "https://www.soccer-net.org/tasks/ball-action-spotting",
+      "download_url": "https://huggingface.co/datasets/SoccerNet/SN-BAS-2025",
+      "scale": "2024基准7场720p英格兰联赛+2场challenge；2025为Team Ball Action Spotting，HF约19.3GB",
+      "labels": [
+        "12类球相关动作单时间戳",
+        "传球、射门、封堵、成功抢断、任意球、进球等",
+        "2025加入球队归属任务"
+      ],
+      "access": "HF gated；需账号、提交申请、SoccerNet NDA与人工审批，批准后ZIP无需密码",
+      "license": "HF标other，以SoccerNet NDA为准",
+      "notes": "适合射门过程与候选片段时间线；不是精确球3D轨迹、整球过线标签或犯规成立依据。2024的规模不能直接当成2025新增规模",
+      "downloaded": false,
+      "verified_on": "2026-10-26"
+    },
+    {
+      "id": "soccerreplay_1988",
+      "title": "SoccerReplay-1988：比赛事件与解说",
+      "event_types": [
+        "offside",
+        "foul",
+        "goal",
+        "card"
+      ],
+      "source_url": "https://huggingface.co/datasets/Homie0609/SoccerReplay-1988",
+      "download_url": "https://huggingface.co/datasets/Homie0609/SoccerReplay-1988",
+      "scale": "1988场，训练/验证/测试为1488/250/250；每场上下半场mkv与事件、解说和比赛背景JSON",
+      "labels": [
+        "时间对齐事件描述",
+        "自然语言解说和比赛背景",
+        "由作者自动整理管线生成的数据，非精细几何判罚真值"
+      ],
+      "access": "需HF登录、NDA申请；文本文件批准后可访问，完整视频存储链接另外发放，作者提示审核可能数周",
+      "license": "CC BY-NC-SA 4.0，作者明确非商用与NDA要求",
+      "notes": "正确名称为1988，不是198；CVPR2025论文https://openaccess.thecvf.com/content/CVPR2025/papers/Rao_Towards_Universal_Soccer_Video_Understanding_CVPR_2025_paper.pdf 。适合LLM讲解与检索，不是立即可用的2026比赛或精确判罚标注",
+      "downloaded": false,
+      "verified_on": "2026-10-26"
+    },
+    {
+      "id": "iaufd",
+      "title": "IAUFD：含红黄牌与裁判的足球图片",
+      "event_types": [
+        "goal",
+        "card"
+      ],
+      "source_url": "https://sites.google.com/view/image-and-video-analysis/iaufd",
+      "download_url": "https://sites.google.com/view/image-and-video-analysis/iaufd",
+      "scale": "作者页列100,000张图片、33段源视频、10种图像事件类别",
+      "labels": [
+        "红牌、黄牌、裁判、球、球门、罚球区等图像事件类",
+        "txt/xlsx标签",
+        "分卷与小型数据版本"
+      ],
+      "access": "作者主页给出Google Drive分卷、标签及小型版入口；本次未逐个验证文件访问",
+      "license": "作者主页未明确列出，使用前联系作者确认",
+      "notes": "可作为出牌/球门图片筛选线索，不是被出牌球员身份或判罚全过程标注；不能把连续帧随机拆分到训练/测试，也不能把页面公开理解为任意再分发",
+      "downloaded": false,
+      "verified_on": "2026-10-26"
+    },
+    {
+      "id": "roboflow_card_detection",
+      "title": "Card_Detection：红黄牌小目标检测起点",
+      "event_types": [
+        "card"
+      ],
+      "source_url": "https://universe.roboflow.com/neural-network-ep0gh/card_detection-fuysv",
+      "download_url": "https://universe.roboflow.com/neural-network-ep0gh/card_detection-fuysv/dataset/1",
+      "scale": "网页当前164原图，版本1为423张增强图；作者模型卡另称约141独立来源，信息有差异",
+      "labels": [
+        "网页4类：红牌、黄牌、绿牌、objects杂项",
+        "作者模型卡称3类，与导出应重新核对",
+        "目标检测框，可按平台提供格式导出"
+      ],
+      "access": "Roboflow Universe公开项目，导出通常需平台账号；版本页本次请求超时，未实际导出。作者模型卡https://huggingface.co/rarfileexe/Football-Referee-Card-Detector",
+      "license": "项目页列CC BY 4.0；作者模型权重另列AGPL-3.0，二者应分别记录",
+      "notes": "仅为小规模起点，需查data.yaml、清除杂项与误标、合并重复/增强图后按来源分组。作者自述无独立测试集；不能把检测牌等同于识别受牌球员或判断是否应给牌，不直接采用绿色牌作为本项目标准判罚类别",
+      "downloaded": false,
+      "verified_on": "2026-10-26"
+    },
+    {
+      "id": "referee_gesture_2024_paper",
+      "title": "裁判手势YOLOv8s研究：出牌与越位示意",
+      "event_types": [
+        "offside",
+        "card"
+      ],
+      "source_url": "https://www.frontiersin.org/journals/computational-neuroscience/articles/10.3389/fncom.2024.1341234/full",
+      "download_url": null,
+      "scale": "2024论文自建1200张、6种裁判手势；源比赛2018–2023",
+      "labels": [
+        "整名裁判的检测框与手势类型",
+        "主裁出牌、任意球/点球等",
+        "助理裁判越位示意等"
+      ],
+      "access": "论文可读；本次未找到明确可直接下载的完整数据ZIP。文章数据可用声明指文章/补充材料与联系作者，需进一步确认",
+      "license": "论文开放许可不等于独立数据包许可；数据授权待核验",
+      "notes": "可学习YOLO小目标/手势设计，不能当作已经取得的训练集。识别裁判做出的手势只说明观察到裁判信号，不证明原犯规或越位判断正确",
+      "downloaded": false,
+      "verified_on": "2026-10-26"
+    },
+    {
+      "id": "offside_panse_2020",
+      "title": "静态越位位置数据与方法参考（Panse 2020）",
+      "event_types": [
+        "offside"
+      ],
+      "source_url": "https://github.com/Neerajj9/Computer-Vision-based-Offside-Detection-in-Soccer",
+      "download_url": "https://drive.google.com/drive/folders/1TgxT-9GRB3BWice_5WHuCQ4Byev-NHFI?usp=sharing",
+      "scale": "作者仓库公开数据Drive入口与示意图；样本总量、独立数据许可及Drive完整可用性未验证",
+      "labels": [
+        "静态场景的越位位置方法参考",
+        "姿态、球队颜色、场地消失点相关代码"
+      ],
+      "access": "作者GitHub公开；Drive数据入口存在，本次未下载或代申请",
+      "license": "代码MIT；不能自动把MIT套用于转播截图或其他第三方数据",
+      "notes": "论文DOI https://doi.org/10.1145/3422844.3423055 。适合静态辅助线研究，不是最新比赛数据，单张图的越位位置判断不等于越位犯规成立",
+      "downloaded": false,
+      "verified_on": "2026-10-26"
+    }
+  ],
+  "matches": [
+    {
+      "id": "pl-20261025-cry-new-offside",
+      "title": "水晶宫—纽卡：越位进球取消",
+      "event_types": [
+        "offside",
+        "goal"
+      ],
+      "match_date": "2026-10-25",
+      "published_date": "2026-10-25",
+      "source_url": "https://www.premierleague.com/en/news/4744845/matchweek-8-var-decisions-explained",
+      "locator": "Matchweek 8 Sunday，52分钟，Joe Willock",
+      "media_type": "官方图文页及嵌入判罚视频帖",
+      "access": "正文可读；官方X视频帖本次返回403，未核验播放、未下载",
+      "rights": "未见开放训练许可；公开观看不等于训练或再分发授权",
+      "notes": "官方页明确判为越位并取消进球。判罚帖：https://x.com/PLMatchCentre/status/2114374597827293362 。事件时间不是逐帧越位线标注。",
+      "verified_on": "2026-10-26"
+    },
+    {
+      "id": "pl-20261025-hul-bre-card",
+      "title": "Hull—Brentford：禁区接触与黄牌",
+      "event_types": [
+        "foul",
+        "card"
+      ],
+      "match_date": "2026-10-25",
+      "published_date": "2026-10-25",
+      "source_url": "https://www.premierleague.com/en/news/4744845/matchweek-8-var-decisions-explained",
+      "locator": "Matchweek 8 Sunday，21分钟，Hickey与Iroegbunam",
+      "media_type": "官方图文页及嵌入判罚帖",
+      "access": "正文可读；X帖本次403，未取得录像",
+      "rights": "训练、截帧及公开再分发权利需另外确认",
+      "notes": "适合定位黄牌与点球案例；裁判举牌动作及受牌对象仍须在获授权片段中逐帧核验。",
+      "verified_on": "2026-10-26"
+    },
+    {
+      "id": "pl-20261025-hul-bre-contact-negative",
+      "title": "Hull—Brentford：接触但不判点球",
+      "event_types": [
+        "foul"
+      ],
+      "match_date": "2026-10-25",
+      "published_date": "2026-10-25",
+      "source_url": "https://www.premierleague.com/en/news/4744845/matchweek-8-var-decisions-explained",
+      "locator": "Matchweek 8 Sunday，61分钟，Sangare与Belloumi",
+      "media_type": "官方图文页及判罚解释",
+      "access": "正文可读；嵌入媒体播放未核",
+      "rights": "没有据此取得原媒体训练授权",
+      "notes": "轻微接触的对照负例；event_types仅为检索主题，不表示算法或标注已经认定犯规。",
+      "verified_on": "2026-10-26"
+    },
+    {
+      "id": "pl-20261023-ips-nfo-yellow",
+      "title": "Ipswich—Nottingham Forest：滑铲复核后黄牌",
+      "event_types": [
+        "foul",
+        "card"
+      ],
+      "match_date": "2026-10-23",
+      "published_date": "2026-10-25",
+      "source_url": "https://www.premierleague.com/en/news/4744845/matchweek-8-var-decisions-explained",
+      "locator": "Matchweek 8 Friday，48分钟，Issa Diop",
+      "media_type": "官方犯规图片、图文及嵌入判罚帖",
+      "access": "正文和题图链接可定位；图片抓取超时、X帖403，未下载",
+      "rights": "未见开放训练许可；需向权利方确认截帧和使用范围",
+      "notes": "页面题图为相关犯规，图片资源路径日期10-23与页面更新日10-25不同。判罚帖：https://x.com/PLMatchCentre/status/2113730740391141860 。",
+      "verified_on": "2026-10-26"
+    },
+    {
+      "id": "uefa-20261021-villa-viking-goal",
+      "title": "Aston Villa—Viking：在位，进球有效",
+      "event_types": [
+        "offside",
+        "goal"
+      ],
+      "match_date": "2026-10-21",
+      "published_date": "2026-10-22",
+      "source_url": "https://www.uefa.com/uefachampionsleague/news/02a9-218080c33e00-948c7f405b79-1000--uefa-champions-league-var-technical-explanations/",
+      "locator": "Matchday 3 Aston Villa vs Viking，87分钟",
+      "media_type": "官方VAR技术解释页；页内附部分图片或视频",
+      "access": "正文可读，动态嵌入媒体未取得原文件",
+      "rights": "UEFA页声明版权；未获得开放训练或再分发许可",
+      "notes": "属于越位复核后进球有效，不是球是否整体越过门线的GLT案例。",
+      "verified_on": "2026-10-26"
+    },
+    {
+      "id": "uefa-20261013-atleti-united-red",
+      "title": "Atlético—Manchester United：DOGSO红牌",
+      "event_types": [
+        "foul",
+        "card"
+      ],
+      "match_date": "2026-10-13",
+      "published_date": "2026-10-22",
+      "source_url": "https://www.uefa.com/uefachampionsleague/news/02a9-218080c33e00-948c7f405b79-1000--uefa-champions-league-var-technical-explanations/",
+      "locator": "Matchday 2 Atleti vs Manchester United，75分钟",
+      "media_type": "官方说明和对应判罚媒体区",
+      "access": "正文可读；页面说明重大判罚配图或视频，未取得独立录像",
+      "rights": "未见可直接训练的开放许可",
+      "notes": "曼联15号绊倒对手并破坏明显得分机会；可定位犯规、红牌与裁判出牌片段，但本项目未做框或时序标注。",
+      "verified_on": "2026-10-26"
+    },
+    {
+      "id": "pl-20261017-brentford-liverpool-red",
+      "title": "Brentford—Liverpool：头顶冲撞后红牌",
+      "event_types": [
+        "foul",
+        "card"
+      ],
+      "match_date": "2026-10-17",
+      "published_date": "2026-10-18",
+      "source_url": "https://www.premierleague.com/en/news/4737981",
+      "locator": "Matchweek 7 Saturday，45+8分钟，Yarmoliuk与Jacquet",
+      "media_type": "官方图文页及嵌入复核判罚帖",
+      "access": "正文可读；X帖403，录像未下载",
+      "rights": "公开链接不授予训练和重新发布录像的权利",
+      "notes": "适合暴力行为候选与红牌解释；两队名称仅作案例配对，不声明主客排序。",
+      "verified_on": "2026-10-26"
+    },
+    {
+      "id": "pl-20260913-manchester-red-photo",
+      "title": "Manchester United—Manchester City：Foden被出示红牌",
+      "event_types": [
+        "foul",
+        "card"
+      ],
+      "match_date": "2026-09-13",
+      "published_date": "2026-09-14",
+      "source_url": "https://www.premierleague.com/en/news/4713977/matchweek-4-var-decisions-explained",
+      "locator": "Matchweek 4 Sunday，23分钟；题图Haaland celebrates while Foden is shown red",
+      "media_type": "官方发牌主题图片及判罚说明",
+      "access": "正文和题图链接已核到；未保存原图或视频",
+      "rights": "图片为官方媒体资产，训练与公开复用需另外确认",
+      "notes": "可用于定位裁判出示红牌与球员受牌画面。原图入口：https://resources.premierleague.pulselive.com/photo-resources/2026/09/13/11165fab-7bb0-4f83-9b9e-83fde050ec5c/Haaland-celebrates-while-Foden-is-shown-red-v-Man-Utd.jpg?width=1440 。",
+      "verified_on": "2026-10-26"
+    },
+    {
+      "id": "svff-20230806-sweden-usa-goalline",
+      "title": "Sweden—USA女足：历史门线技术案例",
+      "event_types": [
+        "goal"
+      ],
+      "match_date": "2023-08-06",
+      "published_date": "2023-08-06",
+      "source_url": "https://www.svenskfotboll.se/nyheter/landslag/2023/08/vm-swe-usa/",
+      "locator": "点球大战Lina Hurtig罚球；正文GLT段落与旁边图片",
+      "media_type": "足协官方图片/报道；另有FIFA+集锦入口",
+      "access": "足协正文可读；FIFA+集锦现在重定向DAZN，账号及地区限制需用户核验",
+      "rights": "足协注明图片通常归Bildbyran；未取得原图或录像训练许可",
+      "notes": "明确是2023年历史样本，不是近期比赛。官方说明整体过线，但没有提供原始标定、三维球轨迹或可供本项目评测的门线真值。",
+      "verified_on": "2026-10-26"
+    },
+    {
+      "id": "fifa-20140615-france-honduras-goalline",
+      "title": "France—Honduras：历史GLT进球确认",
+      "event_types": [
+        "goal"
+      ],
+      "match_date": "2014-06-15",
+      "published_date": "2018-04-27",
+      "source_url": "https://inside.fifa.com/tournaments/mens/worldcup/2018russia/news/48-days-to-go-was-it-over-the-line-2945114",
+      "locator": "48分钟，Benzema射门反弹、Valladares碰球后的门线判定",
+      "media_type": "FIFA官方回顾；另有FIFA官方GLT专门视频入口",
+      "access": "FIFA回顾正文可读；YouTube视频页本次抓取失败，播放未核验",
+      "rights": "未发现开放训练许可；不能将公开回顾当作原始标定数据",
+      "notes": "比赛日2014-06-15、回顾发布2018-04-27，不是最新比赛。FIFA官方视频于2014-06-21发布：https://www.youtube.com/watch?v=-8e_cdg0NDw 。",
+      "verified_on": "2026-10-26"
+    }
+  ],
+  "rules": [
+    {
+      "id": "ifab-offside",
+      "title": "IFAB Law 11：越位",
+      "event_types": [
+        "offside"
+      ],
+      "source_url": "https://www.theifab.com/laws/latest/offside/",
+      "notes": "区分越位位置与越位犯规，核对触球时刻、球和倒数第二名对手；手臂不计入。",
+      "access": "公开规则页面；当前2026/27，具体比赛按所用版本。",
+      "verified_on": "2026-10-26"
+    },
+    {
+      "id": "ifab-goal",
+      "title": "IFAB Law 10：进球与门线",
+      "event_types": [
+        "goal"
+      ],
+      "source_url": "https://www.theifab.com/laws/latest/determining-the-outcome-of-a-match/",
+      "notes": "需要整个球体越过门线并位于门柱之间、横梁之下；还需排除进球前犯规。",
+      "access": "公开规则页面；不是已取得门线传感器或三维真值数据。",
+      "verified_on": "2026-10-26"
+    },
+    {
+      "id": "ifab-foul",
+      "title": "IFAB Law 12：犯规与不正当行为",
+      "event_types": [
+        "foul",
+        "card"
+      ],
+      "source_url": "https://www.theifab.com/laws/latest/fouls-and-misconduct/",
+      "notes": "碰撞不自动等于犯规；完整动作与不同视角有助于区分不慎、鲁莽和过分力量。",
+      "access": "公开规则页面；不由单张图的人员框直接生成判罚。",
+      "verified_on": "2026-10-26"
+    },
+    {
+      "id": "ifab-var",
+      "title": "IFAB 2026/27 VAR协议",
+      "event_types": [
+        "offside",
+        "foul",
+        "goal",
+        "card"
+      ],
+      "source_url": "https://www.theifab.com/laws/latest/video-assistant-referee-var-protocol/",
+      "notes": "普通黄牌记录不自动属于VAR介入；当前协议包括明确错误的第二黄牌导致红牌的复核，但不包括漏掉潜在第二黄牌；角球纠错是赛事可选规则。",
+      "access": "公开协议，核验2026-10-26。最终以相应比赛规程和主裁决定为准。",
+      "verified_on": "2026-10-26"
+    }
+  ],
+  "media_downloaded": false,
+  "notice": "官方案例用于观察与定位；训练和再分发许可需单独确认，未代签NDA。"
+}

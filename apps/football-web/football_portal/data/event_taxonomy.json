@@ -1,0 +1,984 @@
+{
+  "schema": "football.event-taxonomy.v1",
+  "as_of": "2026-10-26",
+  "rules_reference": "IFAB 2026/27; actual competition rules take precedence",
+  "notice": "42项是识别目标清单；当前没有训练或接入这些事件模型。人工复核分类、数据中出现标签与模型可自动识别是三个不同状态。四类YOLO置信度不能当作事件判罚置信度。",
+  "automatic_event_models_available": false,
+  "data_coverage_source": ".local/datasets/football_events/manifest.json; only actual downloaded samples count",
+  "unknown_policy": "缺少时序、身份、关键机位、触球帧、几何标定或规则证据时输出unknown/needs_evidence，不自动补成判罚或统计值。",
+  "groups": [
+    "判罚与重启",
+    "技术动作",
+    "比赛状态",
+    "战术统计",
+    "场边与环境"
+  ],
+  "events": [
+    {
+      "id": 1,
+      "code": "offside",
+      "name": "越位",
+      "group": "判罚与重启",
+      "subtypes": [
+        "越位位置",
+        "越位犯规",
+        "不越位",
+        "证据不足"
+      ],
+      "recognition_kind": "geometry_and_rule",
+      "evidence_needed": [
+        "同队触球时刻",
+        "进攻方向",
+        "球与倒数第二名对手位置",
+        "合法身体部位与同一球场坐标系",
+        "参与实际比赛及规则例外"
+      ],
+      "detector_role": "检测球、人和关键部位作为候选；不能只比较图像x坐标",
+      "model_status": "untrained",
+      "automated_available": false,
+      "rule_url": "https://www.theifab.com/laws/latest/offside/"
+    },
+    {
+      "id": 2,
+      "code": "goal",
+      "name": "进球（有效 / 无效）",
+      "group": "判罚与重启",
+      "subtypes": [
+        "有效",
+        "无效",
+        "球未全过线",
+        "证据不足"
+      ],
+      "recognition_kind": "geometry_and_rule",
+      "evidence_needed": [
+        "完整球体与门线/门柱/横梁关系",
+        "关键时刻连续机位或门线真值",
+        "进球前越位/手球/犯规证据",
+        "官方判罚或人工核验标签"
+      ],
+      "detector_role": "球和球门定位；球心越线不等于整球越线",
+      "model_status": "untrained",
+      "automated_available": false,
+      "rule_url": "https://www.theifab.com/laws/latest/determining-the-outcome-of-a-match/"
+    },
+    {
+      "id": 3,
+      "code": "foul",
+      "name": "冲撞犯规",
+      "group": "判罚与重启",
+      "subtypes": [
+        "正常对抗",
+        "犯规不出牌",
+        "黄牌级别",
+        "红牌级别",
+        "证据不足"
+      ],
+      "recognition_kind": "temporal_event_and_rule",
+      "evidence_needed": [
+        "接触前后视频",
+        "触球与接触部位",
+        "动作强度和比赛语境",
+        "可用的多视角"
+      ],
+      "detector_role": "邻近人与运动状态只提出对抗候选；不能用框距离直接判犯规",
+      "model_status": "untrained",
+      "automated_available": false,
+      "rule_url": "https://www.theifab.com/laws/latest/fouls-and-misconduct/"
+    },
+    {
+      "id": 4,
+      "code": "handball",
+      "name": "手球",
+      "group": "判罚与重启",
+      "subtypes": [
+        "接触候选",
+        "手球犯规",
+        "非手球犯规",
+        "证据不足"
+      ],
+      "recognition_kind": "temporal_event_and_rule",
+      "evidence_needed": [
+        "球与手臂接触序列",
+        "身体姿态和手臂位置",
+        "动作意图及规则语境",
+        "机位可见性"
+      ],
+      "detector_role": "球/人体关键部位只是定位证据；碰到手臂不一律是犯规",
+      "model_status": "untrained",
+      "automated_available": false,
+      "rule_url": "https://www.theifab.com/laws/latest/fouls-and-misconduct/"
+    },
+    {
+      "id": 5,
+      "code": "yellow_card",
+      "name": "黄牌",
+      "group": "判罚与重启",
+      "subtypes": [
+        "裁判举牌",
+        "受牌人已核验",
+        "受牌人未知"
+      ],
+      "recognition_kind": "object_action_and_identity",
+      "evidence_needed": [
+        "黄牌物体",
+        "裁判出牌动作",
+        "受牌对象关联",
+        "官方事件记录或人工确认"
+      ],
+      "detector_role": "检测黄牌及裁判；不能凭附近球员框确定受牌人",
+      "model_status": "untrained",
+      "automated_available": false,
+      "rule_url": "https://www.theifab.com/laws/latest/fouls-and-misconduct/"
+    },
+    {
+      "id": 6,
+      "code": "red_card",
+      "name": "红牌",
+      "group": "判罚与重启",
+      "subtypes": [
+        "直接红牌",
+        "受牌人已核验",
+        "受牌人未知"
+      ],
+      "recognition_kind": "object_action_and_identity",
+      "evidence_needed": [
+        "红牌物体",
+        "裁判出牌动作",
+        "受牌人身份",
+        "直接红牌/第二黄牌后的红牌记录"
+      ],
+      "detector_role": "检测红牌及动作候选；牌物体分类不能决定处罚正当性",
+      "model_status": "untrained",
+      "automated_available": false,
+      "rule_url": "https://www.theifab.com/laws/latest/fouls-and-misconduct/"
+    },
+    {
+      "id": 7,
+      "code": "second_yellow_red",
+      "name": "两黄变一红",
+      "group": "判罚与重启",
+      "subtypes": [
+        "第二黄牌后罚下",
+        "身份或第一黄牌记录不全"
+      ],
+      "recognition_kind": "temporal_identity_and_rule",
+      "evidence_needed": [
+        "同一人的第一黄牌历史",
+        "第二黄牌与红牌出示序列",
+        "换人/身份/比赛阶段记录"
+      ],
+      "detector_role": "跨时间关联牌与受牌人；两张黄色物体并不等于两黄一红",
+      "model_status": "untrained",
+      "automated_available": false,
+      "rule_url": "https://www.theifab.com/laws/latest/fouls-and-misconduct/"
+    },
+    {
+      "id": 8,
+      "code": "penalty",
+      "name": "点球",
+      "group": "判罚与重启",
+      "subtypes": [
+        "判罚点球",
+        "点球执行",
+        "点球取消",
+        "证据不足"
+      ],
+      "recognition_kind": "temporal_event_and_rule",
+      "evidence_needed": [
+        "犯规性质和位置",
+        "球在比赛中等规则条件",
+        "裁判手势与官方判罚",
+        "罚球点及执行片段"
+      ],
+      "detector_role": "点球点、人物和动作提供候选；禁区内接触不一律判点球",
+      "model_status": "untrained",
+      "automated_available": false,
+      "rule_url": "https://www.theifab.com/laws/latest/the-penalty-kick/"
+    },
+    {
+      "id": 9,
+      "code": "free_kick",
+      "name": "任意球（直接 / 间接）",
+      "group": "判罚与重启",
+      "subtypes": [
+        "直接任意球",
+        "间接任意球",
+        "类型未知"
+      ],
+      "recognition_kind": "temporal_event_and_rule",
+      "evidence_needed": [
+        "暂停与重新开球序列",
+        "犯规原因",
+        "裁判手势或官方标签",
+        "罚球点与球员站位"
+      ],
+      "detector_role": "识别定位球场景；仅从起脚动作无法可靠区分直接和间接",
+      "model_status": "untrained",
+      "automated_available": false,
+      "rule_url": "https://www.theifab.com/laws/latest/free-kicks/"
+    },
+    {
+      "id": 10,
+      "code": "corner",
+      "name": "角球",
+      "group": "判罚与重启",
+      "subtypes": [
+        "左侧",
+        "右侧",
+        "侧别未知"
+      ],
+      "recognition_kind": "temporal_event",
+      "evidence_needed": [
+        "底线出界前最后触球方",
+        "角旗区位置",
+        "角球执行或官方记录"
+      ],
+      "detector_role": "球、角旗/场线和执行动作提供候选",
+      "model_status": "untrained",
+      "automated_available": false,
+      "rule_url": "https://www.theifab.com/laws/latest/the-corner-kick/"
+    },
+    {
+      "id": 11,
+      "code": "throw_in",
+      "name": "界外球",
+      "group": "判罚与重启",
+      "subtypes": [
+        "判给主队",
+        "判给客队",
+        "执行动作",
+        "归属未知"
+      ],
+      "recognition_kind": "temporal_event",
+      "evidence_needed": [
+        "整球越过边线",
+        "最后触球方",
+        "掷球动作或官方标签"
+      ],
+      "detector_role": "球/边线/举球动作提供候选",
+      "model_status": "untrained",
+      "automated_available": false,
+      "rule_url": "https://www.theifab.com/laws/latest/the-throw-in/"
+    },
+    {
+      "id": 12,
+      "code": "goal_kick",
+      "name": "球门球",
+      "group": "判罚与重启",
+      "subtypes": [
+        "判罚",
+        "执行",
+        "证据不足"
+      ],
+      "recognition_kind": "temporal_event",
+      "evidence_needed": [
+        "底线出界与最后触球方",
+        "球门区重启画面",
+        "官方事件标签"
+      ],
+      "detector_role": "门将开球不一定是球门球，需结合前序及重启位置",
+      "model_status": "untrained",
+      "automated_available": false,
+      "rule_url": "https://www.theifab.com/laws/latest/the-goal-kick/"
+    },
+    {
+      "id": 13,
+      "code": "foul_location",
+      "name": "禁区内犯规 vs 禁区外犯规",
+      "group": "判罚与重启",
+      "subtypes": [
+        "禁区内",
+        "禁区外",
+        "边界或延续动作需复核",
+        "位置未知"
+      ],
+      "recognition_kind": "event_attribute_and_geometry",
+      "evidence_needed": [
+        "已核验犯规事件",
+        "实际犯规位置及持续动作",
+        "球场标定和禁区边界",
+        "视角误差"
+      ],
+      "detector_role": "这是犯规的位置属性，不是单独的人物类别；不能用球员框中心代替接触位置",
+      "model_status": "untrained",
+      "automated_available": false,
+      "rule_url": "https://www.theifab.com/laws/latest/fouls-and-misconduct/"
+    },
+    {
+      "id": 14,
+      "code": "shot",
+      "name": "射门（射正 / 射偏 / 被封堵）",
+      "group": "技术动作",
+      "subtypes": [
+        "射正",
+        "射偏",
+        "被封堵",
+        "结果未知"
+      ],
+      "recognition_kind": "temporal_ball_action",
+      "evidence_needed": [
+        "起脚/触球与球轨迹",
+        "球门几何",
+        "后续扑救/封堵/出界",
+        "统一射正口径"
+      ],
+      "detector_role": "检测球和球门用于追踪；射门结果需观察后续",
+      "model_status": "untrained",
+      "automated_available": false
+    },
+    {
+      "id": 15,
+      "code": "pass",
+      "name": "传球（成功 / 失败）",
+      "group": "技术动作",
+      "subtypes": [
+        "成功",
+        "失败",
+        "结果未知"
+      ],
+      "recognition_kind": "temporal_ball_action",
+      "evidence_needed": [
+        "传出与后续接触",
+        "球队和接球人关联",
+        "球轨迹",
+        "明确成功/失败定义"
+      ],
+      "detector_role": "球/球员定位为基础；需时序和队伍识别",
+      "model_status": "untrained",
+      "automated_available": false
+    },
+    {
+      "id": 16,
+      "code": "dribble",
+      "name": "带球（盘带）",
+      "group": "技术动作",
+      "subtypes": [
+        "持球带球",
+        "过人尝试",
+        "成功/失败未知"
+      ],
+      "recognition_kind": "temporal_ball_action",
+      "evidence_needed": [
+        "连续球员与球轨迹",
+        "持球关联",
+        "防守人关系",
+        "事件定义与时段"
+      ],
+      "detector_role": "人物和球框只能提供输入，不能从单帧认定带球成功",
+      "model_status": "untrained",
+      "automated_available": false
+    },
+    {
+      "id": 17,
+      "code": "tackle",
+      "name": "抢断",
+      "group": "技术动作",
+      "subtypes": [
+        "成功",
+        "失败",
+        "结果未知"
+      ],
+      "recognition_kind": "temporal_ball_action",
+      "evidence_needed": [
+        "双方球权前后变化",
+        "触球次序",
+        "参与球员与球轨迹"
+      ],
+      "detector_role": "对抗候选加时序球权变化；与铲球动作分开标注",
+      "model_status": "untrained",
+      "automated_available": false
+    },
+    {
+      "id": 18,
+      "code": "save",
+      "name": "扑救",
+      "group": "技术动作",
+      "subtypes": [
+        "接住",
+        "扑出",
+        "其他扑救",
+        "结果未知"
+      ],
+      "recognition_kind": "temporal_ball_action",
+      "evidence_needed": [
+        "射门候选",
+        "门将动作与触球",
+        "球轨迹后续",
+        "扑救事件标签"
+      ],
+      "detector_role": "门将检测不等于扑救；需球与动作关联",
+      "model_status": "untrained",
+      "automated_available": false
+    },
+    {
+      "id": 19,
+      "code": "header",
+      "name": "头球",
+      "group": "技术动作",
+      "subtypes": [
+        "头球传球",
+        "头球射门",
+        "头球解围",
+        "用途未知"
+      ],
+      "recognition_kind": "temporal_ball_action",
+      "evidence_needed": [
+        "头部与球接触",
+        "触球前后轨迹",
+        "后续用途"
+      ],
+      "detector_role": "头部/球定位及视频动作模型；不能以球在头顶认定接触",
+      "model_status": "untrained",
+      "automated_available": false
+    },
+    {
+      "id": 20,
+      "code": "slide_tackle",
+      "name": "铲球",
+      "group": "技术动作",
+      "subtypes": [
+        "正常铲球",
+        "疑似犯规铲球",
+        "需复核"
+      ],
+      "recognition_kind": "temporal_body_action",
+      "evidence_needed": [
+        "完整身体动作",
+        "先球/先人接触",
+        "接触部位和强度"
+      ],
+      "detector_role": "姿态与视频动作候选；铲球不自动等于犯规",
+      "model_status": "untrained",
+      "automated_available": false
+    },
+    {
+      "id": 21,
+      "code": "dive",
+      "name": "假摔（跳水）",
+      "group": "技术动作",
+      "subtypes": [
+        "疑似假摔",
+        "正常摔倒/受侵犯",
+        "证据不足"
+      ],
+      "recognition_kind": "temporal_event_and_rule",
+      "evidence_needed": [
+        "接触前后多视角",
+        "动作因果和对手影响",
+        "人工核验或官方标签"
+      ],
+      "detector_role": "倒地只提出候选，不能单帧推断欺骗意图",
+      "model_status": "untrained",
+      "automated_available": false,
+      "rule_url": "https://www.theifab.com/laws/latest/fouls-and-misconduct/"
+    },
+    {
+      "id": 22,
+      "code": "holding_pushing",
+      "name": "拉人 / 推人",
+      "group": "技术动作",
+      "subtypes": [
+        "拉人",
+        "推人",
+        "正常接触",
+        "证据不足"
+      ],
+      "recognition_kind": "temporal_body_action",
+      "evidence_needed": [
+        "手臂/球衣接触动作",
+        "持续时间与影响",
+        "多视角及比赛语境"
+      ],
+      "detector_role": "人体关键点和近距离动作候选；是否犯规需额外规则证据",
+      "model_status": "untrained",
+      "automated_available": false,
+      "rule_url": "https://www.theifab.com/laws/latest/fouls-and-misconduct/"
+    },
+    {
+      "id": 23,
+      "code": "shot_block",
+      "name": "堵枪眼（封堵射门）",
+      "group": "技术动作",
+      "subtypes": [
+        "身体封堵",
+        "其他封堵",
+        "证据不足"
+      ],
+      "recognition_kind": "temporal_ball_action",
+      "evidence_needed": [
+        "射门动作",
+        "防守人触球与球轨迹变化",
+        "身体接触部位"
+      ],
+      "detector_role": "球轨迹与防守人关联，避免与门将扑救和一般解围混淆",
+      "model_status": "untrained",
+      "automated_available": false
+    },
+    {
+      "id": 24,
+      "code": "kick_off",
+      "name": "开球（中圈开球）",
+      "group": "比赛状态",
+      "subtypes": [
+        "上半场开球",
+        "下半场开球",
+        "进球后开球",
+        "其他阶段"
+      ],
+      "recognition_kind": "temporal_match_state",
+      "evidence_needed": [
+        "中圈和队伍站位",
+        "球开始运动",
+        "比赛阶段或前序事件"
+      ],
+      "detector_role": "中圈球员定位只是线索；需重启片段",
+      "model_status": "untrained",
+      "automated_available": false,
+      "rule_url": "https://www.theifab.com/laws/latest/the-start-and-restart-of-play/"
+    },
+    {
+      "id": 25,
+      "code": "substitution",
+      "name": "换人",
+      "group": "比赛状态",
+      "subtypes": [
+        "换入",
+        "换出",
+        "双方身份未知"
+      ],
+      "recognition_kind": "temporal_match_state",
+      "evidence_needed": [
+        "换人牌/转播字幕或官方记录",
+        "入场离场球员身份",
+        "时间"
+      ],
+      "detector_role": "检测人员和牌辅助；不从追踪ID变化推断换人",
+      "model_status": "untrained",
+      "automated_available": false,
+      "rule_url": "https://www.theifab.com/laws/latest/the-players/"
+    },
+    {
+      "id": 26,
+      "code": "injury_stoppage",
+      "name": "受伤倒地（治疗暂停）",
+      "group": "比赛状态",
+      "subtypes": [
+        "倒地候选",
+        "治疗暂停",
+        "是否受伤未知"
+      ],
+      "recognition_kind": "temporal_match_state",
+      "evidence_needed": [
+        "倒地持续片段",
+        "裁判暂停与医护入场",
+        "官方记录或人工确认"
+      ],
+      "detector_role": "倒地姿态不等于已确诊受伤；不输出医学诊断",
+      "model_status": "untrained",
+      "automated_available": false
+    },
+    {
+      "id": 27,
+      "code": "added_time_board",
+      "name": "补时（第四官员举牌）",
+      "group": "比赛状态",
+      "subtypes": [
+        "举牌",
+        "补时分钟数可读",
+        "数字未知"
+      ],
+      "recognition_kind": "object_action_and_ocr",
+      "evidence_needed": [
+        "第四官员与电子牌",
+        "清晰数字OCR",
+        "比赛阶段及转播时间"
+      ],
+      "detector_role": "牌和举牌动作检测加OCR；注意与换人牌数字区分",
+      "model_status": "untrained",
+      "automated_available": false,
+      "rule_url": "https://www.theifab.com/laws/latest/the-duration-of-the-match/"
+    },
+    {
+      "id": 28,
+      "code": "period_end",
+      "name": "中场休息 / 全场结束",
+      "group": "比赛状态",
+      "subtypes": [
+        "中场休息",
+        "全场结束",
+        "加时阶段结束",
+        "阶段未知"
+      ],
+      "recognition_kind": "temporal_match_state",
+      "evidence_needed": [
+        "比赛时钟",
+        "哨声或官方事件",
+        "阶段状态和重启/退场"
+      ],
+      "detector_role": "不以球员停止运动或视频结束自动认定比赛结束",
+      "model_status": "untrained",
+      "automated_available": false,
+      "rule_url": "https://www.theifab.com/laws/latest/the-duration-of-the-match/"
+    },
+    {
+      "id": 29,
+      "code": "var_check",
+      "name": "VAR 介入（耳机检查）",
+      "group": "比赛状态",
+      "subtypes": [
+        "耳机沟通候选",
+        "场边回看",
+        "已确认VAR检查",
+        "原因未知"
+      ],
+      "recognition_kind": "temporal_body_action",
+      "evidence_needed": [
+        "裁判动作序列",
+        "VAR画面/字幕或官方记录",
+        "介入原因与判罚前后"
+      ],
+      "detector_role": "触摸耳机不必然代表VAR介入，需上下文确认",
+      "model_status": "untrained",
+      "automated_available": false,
+      "rule_url": "https://www.theifab.com/laws/latest/video-assistant-referee-var-protocol/"
+    },
+    {
+      "id": 30,
+      "code": "play_state",
+      "name": "比赛暂停 / 恢复",
+      "group": "比赛状态",
+      "subtypes": [
+        "暂停",
+        "恢复",
+        "比赛中",
+        "状态未知"
+      ],
+      "recognition_kind": "temporal_match_state",
+      "evidence_needed": [
+        "球是否在比赛中",
+        "哨声/裁判信号/官方事件",
+        "连续时钟和重启动作"
+      ],
+      "detector_role": "镜头切换或低运动不能直接当作暂停",
+      "model_status": "untrained",
+      "automated_available": false
+    },
+    {
+      "id": 31,
+      "code": "attack_direction",
+      "name": "进攻方向（左 / 右）",
+      "group": "战术统计",
+      "subtypes": [
+        "图像向左",
+        "图像向右",
+        "球场方向",
+        "未知"
+      ],
+      "recognition_kind": "tracking_and_geometry",
+      "evidence_needed": [
+        "队伍身份",
+        "比赛半场及球门归属",
+        "标定/镜头变换",
+        "坐标系定义"
+      ],
+      "detector_role": "必须说明图像方向还是标准球场方向，转播切镜后重新核验",
+      "model_status": "untrained",
+      "automated_available": false
+    },
+    {
+      "id": 32,
+      "code": "possession",
+      "name": "控球率",
+      "group": "战术统计",
+      "subtypes": [
+        "基于有效持球时间",
+        "观察区间估算",
+        "不可计算"
+      ],
+      "recognition_kind": "aggregate_statistic",
+      "evidence_needed": [
+        "可靠球权状态和队伍身份",
+        "有效比赛时段",
+        "未观测时段与分母定义",
+        "统计方法"
+      ],
+      "detector_role": "不能用球员框数或球检出帧比例代替控球率",
+      "model_status": "untrained",
+      "automated_available": false
+    },
+    {
+      "id": 33,
+      "code": "formation",
+      "name": "阵型识别（4-4-2/4-3-3 等）",
+      "group": "战术统计",
+      "subtypes": [
+        "4-4-2",
+        "4-3-3",
+        "其他阵型",
+        "视野不足"
+      ],
+      "recognition_kind": "tracking_and_tactics",
+      "evidence_needed": [
+        "稳定队伍和球员轨迹",
+        "标定球场位置",
+        "足够全队可见范围",
+        "攻防阶段和时间窗"
+      ],
+      "detector_role": "局部转播画面人数分布不能直接代表全队阵型",
+      "model_status": "untrained",
+      "automated_available": false
+    },
+    {
+      "id": 34,
+      "code": "offside_trap",
+      "name": "越位陷阱",
+      "group": "战术统计",
+      "subtypes": [
+        "疑似集体造越位",
+        "普通站位变化",
+        "无法确认"
+      ],
+      "recognition_kind": "tracking_and_tactics",
+      "evidence_needed": [
+        "防线集体运动",
+        "传球触球时间",
+        "攻方参与者",
+        "多事件时间窗和战术定义"
+      ],
+      "detector_role": "一次越位不能反推防守方有意实施越位陷阱",
+      "model_status": "untrained",
+      "automated_available": false
+    },
+    {
+      "id": 35,
+      "code": "defensive_line",
+      "name": "防线前压 / 回撤",
+      "group": "战术统计",
+      "subtypes": [
+        "前压",
+        "回撤",
+        "保持",
+        "未知"
+      ],
+      "recognition_kind": "tracking_and_tactics",
+      "evidence_needed": [
+        "后卫角色或人工阵容映射",
+        "校准后的连续位置",
+        "进攻方向",
+        "窗口及位移阈值定义"
+      ],
+      "detector_role": "需剔除摄像机运动，不比较原始框中心像素位移",
+      "model_status": "untrained",
+      "automated_available": false
+    },
+    {
+      "id": 36,
+      "code": "high_press",
+      "name": "高位逼抢",
+      "group": "战术统计",
+      "subtypes": [
+        "疑似高位逼抢",
+        "其他防守",
+        "未知"
+      ],
+      "recognition_kind": "tracking_and_tactics",
+      "evidence_needed": [
+        "球权和比赛阶段",
+        "球场区域",
+        "防守人与持球人连续关系",
+        "压力指标及战术定义"
+      ],
+      "detector_role": "局部球员聚集不足以认定高位逼抢",
+      "model_status": "untrained",
+      "automated_available": false
+    },
+    {
+      "id": 37,
+      "code": "counter_attack",
+      "name": "反击",
+      "group": "战术统计",
+      "subtypes": [
+        "疑似反击",
+        "普通进攻",
+        "未知"
+      ],
+      "recognition_kind": "tracking_and_tactics",
+      "evidence_needed": [
+        "球权转换时刻",
+        "推进方向/速度/空间",
+        "进攻参与者",
+        "时间窗与反击定义"
+      ],
+      "detector_role": "一次向前传球或快速移动不能直接认定反击",
+      "model_status": "untrained",
+      "automated_available": false
+    },
+    {
+      "id": 38,
+      "code": "celebration",
+      "name": "球员庆祝",
+      "group": "场边与环境",
+      "subtypes": [
+        "个人庆祝",
+        "集体庆祝",
+        "原因未知"
+      ],
+      "recognition_kind": "temporal_body_action",
+      "evidence_needed": [
+        "连续庆祝动作",
+        "球员身份与前序事件",
+        "人工动作标签"
+      ],
+      "detector_role": "庆祝不等于已确认有效进球",
+      "model_status": "untrained",
+      "automated_available": false
+    },
+    {
+      "id": 39,
+      "code": "coach_instruction",
+      "name": "教练在场边指挥",
+      "group": "场边与环境",
+      "subtypes": [
+        "场边指挥动作",
+        "人物身份未知"
+      ],
+      "recognition_kind": "temporal_body_action",
+      "evidence_needed": [
+        "技术区画面",
+        "教练身份",
+        "连续手势与指挥动作标签"
+      ],
+      "detector_role": "场边挥手人员不一定是教练，不能只按服装推断身份",
+      "model_status": "untrained",
+      "automated_available": false
+    },
+    {
+      "id": 40,
+      "code": "crowd_incident",
+      "name": "球迷骚乱 / 投掷物",
+      "group": "场边与环境",
+      "subtypes": [
+        "疑似人群异常",
+        "投掷物候选",
+        "已人工核验事件",
+        "未知"
+      ],
+      "recognition_kind": "temporal_scene_event",
+      "evidence_needed": [
+        "连续看台/场边画面",
+        "物体运动或异常行为",
+        "多源核验和人工标注"
+      ],
+      "detector_role": "人群密集、欢呼或单帧物体不能直接认定骚乱或恶意投掷",
+      "model_status": "untrained",
+      "automated_available": false
+    },
+    {
+      "id": 41,
+      "code": "match_environment",
+      "name": "雨天 / 雪天 / 夜场环境",
+      "group": "场边与环境",
+      "subtypes": [
+        "雨天",
+        "雪天",
+        "夜场",
+        "其他/不明"
+      ],
+      "recognition_kind": "scene_multilabel",
+      "evidence_needed": [
+        "真实画面与环境标签",
+        "照明/降水可见线索",
+        "不同机位天气样本"
+      ],
+      "detector_role": "环境多标签，可同时雨天和夜场；不能把暗色滤镜当作夜场真值",
+      "model_status": "untrained",
+      "automated_available": false
+    },
+    {
+      "id": 42,
+      "code": "smoke_pyrotechnics",
+      "name": "烟花 / 烟雾",
+      "group": "场边与环境",
+      "subtypes": [
+        "烟花",
+        "烟雾",
+        "来源不明"
+      ],
+      "recognition_kind": "scene_temporal_event",
+      "evidence_needed": [
+        "烟雾/烟花连续画面",
+        "视觉可见性",
+        "已核验环境事件标签"
+      ],
+      "detector_role": "烟雾检测与来源/危险性判断分开，不能从单帧颜色推断原因",
+      "model_status": "untrained",
+      "automated_available": false
+    }
+  ],
+  "primary_sources": [
+    {
+      "title": "SoccerNet Action Spotting",
+      "url": "https://www.soccer-net.org/tasks/action-spotting"
+    },
+    {
+      "title": "SoccerNet Camera Calibration",
+      "url": "https://www.soccer-net.org/tasks/camera-calibration"
+    },
+    {
+      "title": "SoccerNet Game State Reconstruction",
+      "url": "https://www.soccer-net.org/tasks/game-state-reconstruction"
+    },
+    {
+      "title": "SoccerNet Multi-view Foul Recognition",
+      "url": "https://www.soccer-net.org/tasks/multi-view-foul-recognition"
+    },
+    {
+      "title": "IFAB Law 10 Outcome of a Match",
+      "url": "https://www.theifab.com/laws/latest/determining-the-outcome-of-a-match/"
+    },
+    {
+      "title": "IFAB Law 12 Fouls and Misconduct",
+      "url": "https://www.theifab.com/laws/latest/fouls-and-misconduct/"
+    },
+    {
+      "title": "IFAB Free Kicks",
+      "url": "https://www.theifab.com/laws/latest/free-kicks/"
+    },
+    {
+      "title": "IFAB Law 11 Offside",
+      "url": "https://www.theifab.com/laws/latest/offside/"
+    },
+    {
+      "title": "IFAB The Corner Kick",
+      "url": "https://www.theifab.com/laws/latest/the-corner-kick/"
+    },
+    {
+      "title": "IFAB The Duration Of The Match",
+      "url": "https://www.theifab.com/laws/latest/the-duration-of-the-match/"
+    },
+    {
+      "title": "IFAB The Goal Kick",
+      "url": "https://www.theifab.com/laws/latest/the-goal-kick/"
+    },
+    {
+      "title": "IFAB The Penalty Kick",
+      "url": "https://www.theifab.com/laws/latest/the-penalty-kick/"
+    },
+    {
+      "title": "IFAB The Players",
+      "url": "https://www.theifab.com/laws/latest/the-players/"
+    },
+    {
+      "title": "IFAB The Start And Restart Of Play",
+      "url": "https://www.theifab.com/laws/latest/the-start-and-restart-of-play/"
+    },
+    {
+      "title": "IFAB The Throw In",
+      "url": "https://www.theifab.com/laws/latest/the-throw-in/"
+    },
+    {
+      "title": "IFAB VAR protocol",
+      "url": "https://www.theifab.com/laws/latest/video-assistant-referee-var-protocol/"
+    }
+  ]
+}

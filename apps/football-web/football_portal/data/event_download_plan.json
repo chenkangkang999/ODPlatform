@@ -1,0 +1,71 @@
+{
+  "schema": "football.download-plan.v1",
+  "description": "首批非商业研究子集；可修改来源、分组与数量，不代表42项事件训练数据已齐备。",
+  "transport_notes": "2026-10-26: Initial raw downloads via statsbomb alias hit TLS EOF; curl reset and Contents API quota0. Repository now redirects to official hudl/open-data; canonical raw owner probe succeeded, so plan uses hudl. No token or credentials used; existing files are retained.",
+  "sources": {
+    "infactory_soccer_events": {
+      "source_id": "infactory_soccer_events",
+      "title": "Infactory Soccer Events",
+      "url": "https://huggingface.co/datasets/infactory-ai/soccer-events",
+      "download_base": "https://huggingface.co/datasets/infactory-ai/soccer-events/resolve/d8ba9a491eea5c573525a37d42fd55144c12dd37/",
+      "revision": "d8ba9a491eea5c573525a37d42fd55144c12dd37",
+      "license": "Proprietary Infront Italy content; dataset author permits non-commercial research only; not permission to redistribute broadcasts.",
+      "license_url": "https://huggingface.co/datasets/infactory-ai/soccer-events#license",
+      "annotation_quality": "Provider multimodal automatic labels; human review required",
+      "event_types": ["goal", "card"],
+      "season": "2024-25",
+      "not_covered": "Not latest 2026 footage, precise offside/goal-line truth, foul correctness, recipient identity, or all 42 events."
+    },
+    "wikimedia_commons": {
+      "source_id": "wikimedia_commons",
+      "title": "Wikimedia Commons: two CC0 football photographs",
+      "url": "https://commons.wikimedia.org/",
+      "download_base": "https://upload.wikimedia.org/wikipedia/commons/",
+      "license": "CC0-1.0 per authors' declarations on the two linked Commons file pages; photographs have no supplied boxes or adjudication truth.",
+      "license_url": "https://creativecommons.org/publicdomain/zero/1.0/",
+      "event_types": ["save", "free_kick"],
+      "not_covered": "Only source-captioned save and free-kick preparation images; not professional VAR truth, no direct/indirect classification or event outcome labels."
+    },
+    "statsbomb_open_data": {
+      "source_id": "statsbomb_open_data",
+      "title": "StatsBomb Open Data",
+      "url": "https://github.com/statsbomb/open-data",
+      "canonical_url": "https://github.com/hudl/open-data",
+      "download_base": "https://raw.githubusercontent.com/hudl/open-data/master/",
+      "license": "StatsBomb Public Data User Agreement; non-commercial research/analytics only; do not redistribute raw data; publication of analysis requires StatsBomb attribution and brand logo. See downloaded LICENSE.pdf for full terms.",
+      "license_url": "https://github.com/statsbomb/open-data/blob/master/LICENSE.pdf",
+      "event_types": ["offside", "goal", "foul", "card"],
+      "seasons": ["UEFA Women's EURO 2025", "UEFA EURO 2024", "FIFA World Cup 2022"],
+      "not_covered": "Event JSON is not image/video or YOLO boxes; goal/card/free-kick/location mappings may be partial."
+    }
+  },
+  "bootstrap_files": [
+    {"path": "infactory/README.md", "remote_path": "README.md", "kind": "license", "source_id": "infactory_soccer_events"},
+    {"path": "infactory/metadata.csv", "remote_path": "metadata.csv", "kind": "metadata", "source_id": "infactory_soccer_events"},
+    {"path": "statsbomb/README.md", "remote_path": "README.md", "kind": "license", "source_id": "statsbomb_open_data"},
+    {"path": "statsbomb/LICENSE.pdf", "remote_path": "LICENSE.pdf", "kind": "license", "source_id": "statsbomb_open_data"},
+    {"path": "statsbomb/competitions.json", "remote_path": "data/competitions.json", "kind": "metadata", "source_id": "statsbomb_open_data"},
+    {"group": "images", "path": "commons/ryan_swain_save_20250701.jpg", "remote_path": "f/f4/Ryan_Swain_goalkeeping_making_a_save.jpg", "kind": "image", "source_id": "wikimedia_commons", "coverage_event_ids": [18], "match_date": "2025-07-01", "author": "Loki841990", "source_page": "https://commons.wikimedia.org/wiki/File:Ryan_Swain_goalkeeping_making_a_save.jpg", "annotation_origin": "Uploader caption: goalkeeper making a save; no bounding boxes; pending human review."},
+    {"group": "images", "path": "commons/wealdstone_yeovil_free_kick_20261010.jpg", "remote_path": "8/8b/Yeovil_Town's_free_kick_10102026_(1).jpg", "kind": "image", "source_id": "wikimedia_commons", "coverage_event_ids": [9], "match_date": "2026-10-10", "home_team": "Wealdstone", "away_team": "Yeovil Town", "author": "Timmy96", "source_page": "https://commons.wikimedia.org/wiki/File:Yeovil_Town%27s_free_kick_10102026_(1).jpg", "annotation_origin": "Uploader caption: free kick about to be taken; not direct/indirect or execution-result ground truth; no bounding boxes; pending human review."}
+  ],
+  "videos": {
+    "source_id": "infactory_soccer_events",
+    "index_path": "infactory/metadata.csv",
+    "categories": ["goal", "yellow_card", "red_card"],
+    "clips_per_category": 8,
+    "preferred_subtypes": ["Header", "Free kick shot", "Second Yellow Card", "Violent Behaviour", "Last Man Foul"]
+  },
+  "events": {
+    "source_id": "statsbomb_open_data",
+    "competitions": [
+      {"competition_id": 53, "season_id": 315, "limit": null, "title": "UEFA Women's EURO 2025: complete 31-match event subset"},
+      {"competition_id": 55, "season_id": 282, "limit": 3, "title": "UEFA EURO 2024: last three matches"},
+      {"competition_id": 43, "season_id": 106, "limit": 1, "title": "FIFA World Cup 2022: final"}
+    ]
+  },
+  "blocked_sources": [
+    {"source_id": "soccernet_mvfouls", "url": "https://github.com/SoccerNet/sn-mvfoul", "status": "requires_user_nda_and_password", "reason": "Official extraction instructions require NDA/password for protected broadcasts; not signed or bypassed.", "next_step": "Sign in to Hugging Face SoccerNet, request access under your own name; provide approved local dataset afterward."},
+    {"source_id": "soccerchat", "url": "https://huggingface.co/datasets/SimulaMet/SoccerChat", "status": "http_401", "reason": "File tree public but actual README request returned HTTP401 without approval; no bypass attempted."},
+    {"source_id": "latest_official_var_media", "url": "https://www.premierleague.com/en/news/4744845/matchweek-8-var-decisions-explained", "status": "link_only_not_downloaded", "reason": "Latest official cases remain research links; no reusable original broadcast media license/raw download obtained."}
+  ]
+}
