@@ -1,52 +1,130 @@
 # ============================================================
-# 足球AI辅助裁判 —— 运行配置
-# 所有参数可调，不硬编码在代码里
+# 足球AI辅助裁判 —— 运行配置（几何 / 跟踪 / 规则的唯一数据源）
+#
+# ★ 读取方式（2026-10-26 修正）:
+#   本文件此前【从未被加载过】—— jobs.py 不传 football_config, 于是规则引擎
+#   永远用代码里的默认值。现在 PitchAnalyzer 在 config=None 时会自动读取本文件,
+#   所以下面每一节都是真正生效的。
+#
+# ★ 代码里不写死任何阈值: 本文件的每一项都对应一个 dataclass 字段
+#   （geometric/settings.py、tracking/settings.py）。想知道"能调什么",
+#   看那两个文件即可; 想知道"当前按什么在跑", 看结果里的 settings 审计块。
 # ============================================================
 
-# ---------- 检测层 (YOLO) ----------
+# ---------- 场地尺寸（默认 IFAB 国际比赛标准场地）----------
+pitch:
+  length: 105.0                # 场地长度（米）
+  width: 68.0                  # 场地宽度（米）
+  goal_width: 7.32             # 两门柱内沿距离
+  goal_height: 2.44
+  penalty_area_depth: 16.5
+  penalty_area_width: 40.32
+  goal_area_depth: 5.5
+  goal_area_width: 18.32
+  penalty_spot_distance: 11.0
+  centre_circle_radius: 9.15
+  # 非标准场地（青训 / 五人制）在这里覆盖即可, 全链路跟着变。
+
+# ---------- 标定质量门槛与求解参数 ----------
+calibration:
+  min_points: 4                    # 求解单应性所需的最少对应点
+  max_reprojection_error_m: 1.0    # 重投影误差上限（米）, 超过即拒绝该标定
+  ransac_reprojection_px: 5.0      # >=5 点时 RANSAC 的内点阈值（像素）
+  full_frame_tolerance_px: 2.0     # 判定"画面四角凑数"的容差（像素）
+  point_range_factor: 2.0          # 像素点允许超出画面的倍数（防点错坐标）
+  finite_margin: 1.0e-6
+  coordinate_precision_px: 3       # 标定文件里像素坐标的小数位
+  coordinate_precision_m: 4
+
+# ---------- 几何层（球场标定从哪来）----------
+# ★★ 没有标定就没有"米" ★★
+# 这里【不再】放"整幅画面四角 ↔ 球场四角"的假标定。那等于假设照片恰好完整
+# 框住球场且没有透视, 会让所有以米为单位的结论失真, 而能力标志却报告"已标定"。
+#
+# 标定必须来自下面三者之一, 否则几何事件（越位/出界/进球/接触）一律不产出:
+#   1) 素材旁边的同名 sidecar: <素材名>.calibration.json
+#   2) 素材同目录的 calibration.json
+#   3) configs/runtime/calibrations/<素材名>.json
+#
+# 生成标定:
+#   odp-calibrate --image <一帧图> --landmark <名>:<x>,<y> ... --save <名字>
+#   odp-calibrate --list-landmarks        # 查看所有可用关键点名
+homography:
+  # 想固定用某个文件时打开下面这行（相对路径以 configs/runtime/ 为基准）:
+  # calibration_file: calibrations/default.json
+  #
+  # 也可以把标定直接写在这里（推荐用 odp-calibrate 生成后粘过来）:
+  # points:
+  #   - {landmark: penalty_area_left_top,    pixel: [512.0, 402.0]}
+  #   - {landmark: penalty_area_left_bottom, pixel: [498.0, 655.0]}
+  #   - {landmark: halfway_bottom,           pixel: [960.0, 604.0]}
+  #   - {landmark: goal_left_post_bottom,    pixel: [371.0, 470.0]}
+  # image_size: [1920, 1080]
+
+# ---------- 地图规则阈值 ----------
+rules:
+  offside_margin_m: 0.0             # 越位容差（米）; 标定误差大时可放宽
+  collision_distance_m: 2.0         # 接触候选的距离阈值（米）
+  ball_assignment_tolerance_m: 0.5  # 用"谁离球最近"估计球归属的距离（米）
+  ball_radius_m: 0.11               # 5 号球半径（米）
+  goal_line_tolerance_m: null       # 门线容差; null = 取 ball_radius_m
+  attacking_direction: auto         # auto | left | right
+  attacking_team: auto              # auto | A | B（auto = 离球最近的队）
+  goal_defending_team: null         # 该端球门的防守方; null 时出界只能报 unknown
+
+# ---------- 分析器时序参数 ----------
+analyzer:
+  event_cooldown_frames: 30         # 同类事件在该帧数内只报一次
+  possession_memory_frames: 15      # 球归属结论保留多少帧
+  min_direction_delta_m: 1.0        # 推断进攻方向时球至少偏离多少米
+
+# ---------- 跟踪层 ----------
+tracking:
+  backend: botsort                  # botsort | bytetrack（两者共用两阶段关联实现）
+  min_confidence: 0.25              # 进入跟踪的最低检测置信度
+  high_threshold: 0.5               # 高分阶段阈值（ByteTrack 的 track_thresh）
+  iou_threshold: 0.45               # 关联所需 IoU 下限
+  max_age: 30                       # 丢失后保持多少帧
+  min_hits: 3                       # 连续命中多少帧才确认
+  max_tracks: 256                   # 活跃轨迹上限（保护内存）
+  # 小目标（足球）专用: 球的框只有十几像素, 每帧位移与自身尺度同量级,
+  # 纯 IoU 会让它每帧换一个 ID。尺度小于该值的目标准许用中心距离兜底关联;
+  # 大目标（球员）仍然只认 IoU, 避免把两个挨着的人错配成同一条轨迹。
+  small_object_extent_px: 48.0
+  center_distance_gate: 1.0
+  history_length: 64                # 每条轨迹保留多少帧历史（有界内存）
+  # 代价矩阵的结构常量（不是调参）:
+  #   IoU 代价 ∈ [0, 1); 中心距离兜底代价 ∈ [distance_cost_base, 2);
+  #   invalid_cost 是"禁止匹配"的哨兵, 必须大于任何有效代价。
+  distance_cost_base: 1.0
+  invalid_cost: 10.0
+  kalman:
+    std_weight_position: 0.05       # = 1/20
+    std_weight_velocity: 0.00625    # = 1/160
+    initiate_position_factor: 2.0
+    initiate_velocity_factor: 10.0
+    aspect_std: 0.01
+    aspect_velocity_std: 0.00001
+    measurement_aspect_std: 0.1
+
+# ---------- 检测层（说明性: 实际权重与参数由 Web 任务的 request.json 传入）----------
 detection:
-  model: models/pretrained/yolo11x-football.pt
+  # 仓库里真实存在的权重; 此前这里写的 yolo11x-football.pt 并不存在
+  model: models/trained/football_yolo/weights/best.pt
   conf_threshold: 0.25
   iou_threshold: 0.45
-  classes: [0, 1]          # 0=player, 1=football
+  classes: [0, 1]                   # 0=player, 1=football（注意 COCO 编码里是反的）
   imgsz: 1280
 
-# ---------- 跟踪层 (BoT-SORT) ----------
-tracking:
-  backend: botsort          # botsort | bytetrack
-  min_confidence: 0.25
-  iou_threshold: 0.45
-  max_age: 30               # 丢失后保持帧数
-  min_hits: 3               # 命中几帧才确认
-
-# ---------- 几何层 (Homography) ----------
-homography:
-  # 画面4个角点（像素坐标）——按实际球场画面标定
-  src_points:
-    - [0, 0]
-    - [1920, 0]
-    - [1920, 1080]
-    - [0, 1080]
-  # 标准足球场尺寸（米）
-  field_length: 105
-  field_width: 68
-
-# ---------- 规则引擎 ----------
-rules:
-  offside_margin: 1.0              # 越位容差（米）
-  collision_distance_m: 2.0         # 冲撞距离阈值
-  ball_assignment_tolerance_m: 0.5   # 球归属距离
-  goal_line_x_tolerance: 0.3        # 进球线容差
-
-# ---------- 动作识别 (VideoMAE V2) ----------
+# ---------- 动作识别（说明性: 实际由 Web 侧 FOOTBALL_ACTION_CKPT 控制）----------
 action_recognition:
+  # 此前写的 videomae_v2_football.pt 并不存在; 现有的是 Kinetics 预训练的 VideoMAE
   model_name: videomae_v2_base
-  checkpoint: models/pretrained/videomae_v2_football.pt
-  num_classes: 10
+  checkpoint: models/pretrained/videomae-base-kinetics
   confidence_threshold: 0.6
-  clip_length: 16          # 每段视频帧数
+  clip_length: 16
 
-# ---------- 输出 ----------
+# ---------- 输出（说明性: 实际输出由 odp-infer / bridge_worker 决定）----------
 output:
   save_video: true
   save_json: true

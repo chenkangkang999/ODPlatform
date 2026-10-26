@@ -110,63 +110,23 @@ def _reader(path: Path, stride: int, platform_root: str):
 # 高级分析：几何规则 + 动作识别
 # ----------------------------------------------------------------------------
 class PitchAnalyzer:
-    """Homography 场地投影 + 规则引擎（冲撞/球出界）。
+    """兼容壳: 真实实现在 od_platform.geometric.analyzer（算法侧维护）。
 
-    简单跑通阶段用画面四角 -> 标准球场四角（105m x 68m）做近似投影；
-    真实使用时应按球场标线手工/自动标定 4 个角点。
+    本类只负责把 ODPlatform 的源码目录加进 sys.path, 然后把活交给算法包。
+    标定 / 规则 / 跟踪的全部逻辑都不在 Web 层 —— 这样算法侧改判据时,
+    网页这一侧一行都不用动。
+
+    ★ 与历史版本的差别: 不再用"整幅画面四角 ↔ 球场四角"伪造单应性。
+      没有真实标定时不产出任何几何事件, 并通过 .calibrated 如实上报
+      （决定了 capabilities.calibrated_pitch 的真假）。
     """
 
-    def __init__(self, width: int, height: int, platform_root: str, config: dict | None = None):
-        self.width, self.height = width, height
-        self.ok = False
-        self._rules = None
-        self._homography = None
-        self._collision_cooldown = {}
-        config = config or {}
-        try:
-            root = Path(platform_root) / "apps/platform/src" if platform_root else None
-            if root and root.is_dir():
-                sys.path.insert(0, str(root))
-            from od_platform.geometric.homography import FieldHomography
-            from od_platform.geometric.rules import RuleEngine
-
-            src = [(0.0, 0.0), (float(width), 0.0), (float(width), float(height)), (0.0, float(height))]
-            dst = [(0.0, 0.0), (105.0, 0.0), (105.0, 68.0), (0.0, 68.0)]
-            self._homography = FieldHomography(src_points=src, dst_points=dst)
-            self._rules = RuleEngine(homography=self._homography, config=config.get("rules", {}))
-            self.ok = True
-        except Exception as exc:  # noqa: BLE001
-            print(f"[PitchAnalyzer] 几何模块不可用，降级: {exc}", file=sys.stderr)
-
-    def analyze(self, frame: dict) -> list[dict]:
-        if not self.ok:
-            return []
-        events = []
-        players, ball = [], None
-        for box in frame["boxes"]:
-            mx, my = self._homography.pixel_to_meter(box["cx"], box["y2"])
-            if box["cls"] == "player":
-                players.append((mx, my, box.get("track_id")))
-            elif box["cls"] == "ball":
-                ball = (mx, my)
-        # 冲撞：球员两两距离过近（按球员对冷却，避免每帧重复）
-        pts = [(x, y) for x, y, _ in players]
-        for c in self._rules.check_collision(pts):
-            key = tuple(sorted((players[c["p1"]][2], players[c["p2"]][2])))
-            fid = frame["frame_index"]
-            if key not in self._collision_cooldown or fid - self._collision_cooldown[key] > 30:
-                self._collision_cooldown[key] = fid
-                events.append({"type": "collision", "frame_index": fid,
-                               "timestamp": frame.get("timestamp"),
-                               "track_a": players[c["p1"]][2], "track_b": players[c["p2"]][2],
-                               "distance_m": c["dist_m"]})
-        # 球出界
-        if ball is not None:
-            out = self._rules.check_ball_out(ball)
-            if out:
-                events.append({"type": "ball_out", "frame_index": frame["frame_index"],
-                               "timestamp": frame.get("timestamp"), "restart": out})
-        return events
+    def __new__(cls, width, height, platform_root="", config=None, media_path=None):
+        root = Path(platform_root) / "apps/platform/src" if platform_root else None
+        if root and root.is_dir():
+            sys.path.insert(0, str(root))
+        from od_platform.geometric.analyzer import PitchAnalyzer as _Implementation
+        return _Implementation(width, height, platform_root, config, media_path=media_path)
 
 
 def _load_action_recognizer(platform_root: str, request: dict):
@@ -286,7 +246,7 @@ def run_request(request: dict, *, detector=None) -> dict:
                 height, width = image.shape[:2]
                 if pitch is None and not is_image:
                     pitch = PitchAnalyzer(width, height, str(request.get("platform_root", "")),
-                                          request.get("football_config"))
+                                          request.get("football_config"), media_path=path)
                 if recognizer is None and not is_image and not injected:
                     recognizer = _load_action_recognizer(str(request.get("platform_root", "")), request)
 
@@ -367,7 +327,11 @@ def run_request(request: dict, *, detector=None) -> dict:
     if truncated:
         analysis["limitations"].append(f"本次仅处理前{max_frames}个采样帧，未覆盖全部视频。")
     if not is_image:
-        analysis["limitations"].append("跟踪 ID 为自动分配，跨视频不连续；几何投影为画面四角近似，越位需队伍归属暂未判定。")
+        geometry_note = ("未提供球场标定，本次未产出越位/出界/进球/接触候选"
+                         if not (pitch and pitch.calibrated)
+                         else "几何事件基于球场标定，均为待人工复核的候选")
+        analysis["limitations"].append(
+            f"跟踪 ID 为自动分配，跨视频不连续；{geometry_note}。")
     preview = frames[0]
     best = max(preview["boxes"], key=lambda box: box["conf"], default=None)
     artifacts = {"frames": "frames.jsonl", "counts": "counts.csv", "annotated": "annotated.png", "preview": "preview.png", "result": "result.json"}
