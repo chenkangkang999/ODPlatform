@@ -12,9 +12,9 @@ odp_meta:
   source_format: coco
   task: detect
   tool_version: odp-transform/0.4
-  created_at: '2026-10-24T20:08:29'
+  created_at: '2026-10-26T14:42:37'
   contract_fingerprint: 06b81da055191f3e0d45ae4000c1a072d7575c197a53d01d883eb7ff73b61690
-  manifest_path: runs/data_pipeline/20261024-200829/manifest.json
+  manifest_path: runs/data_pipeline/20261026-144237/manifest.json
   split:
     strategy: random
     seed: 42

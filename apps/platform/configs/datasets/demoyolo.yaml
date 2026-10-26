@@ -12,9 +12,9 @@ odp_meta:
   source_format: yolo
   task: detect
   tool_version: odp-transform/0.4
-  created_at: '2026-10-24T20:08:53'
+  created_at: '2026-10-26T14:42:38'
   contract_fingerprint: 17a05bd8fcbacd416c2276f13195154e4549346d2b819f4c4bd993bdc0b88bfe
-  manifest_path: runs/data_pipeline/20261024-200853/manifest.json
+  manifest_path: runs/data_pipeline/20261026-144238/manifest.json
   split:
     strategy: random
     seed: 42
