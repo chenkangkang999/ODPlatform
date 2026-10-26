@@ -1,5 +1,8 @@
-"""data_validation 回归测试:干净集 + 九类脏集,守住 15 项 check 的关键语义。"""
+"""data_validation 回归测试:干净集 + 九类脏集,守住各 check 的关键语义。"""
+from io import BytesIO
 from pathlib import Path
+
+from PIL import Image
 
 from od_platform.data_validation.registry import CheckContext, CheckSeverity, get_check
 from od_platform.data_validation.service import run_all_checks, validate_dataset
@@ -12,6 +15,32 @@ def _ctx(yaml_path: Path) -> CheckContext:
 
 def _run(yaml_path: Path, name: str):
     return get_check(name).func(_ctx(yaml_path))
+
+
+def _jpeg_bytes(size=(32, 32)) -> bytes:
+    buffer = BytesIO()
+    Image.new("RGB", size, "green").save(buffer, format="JPEG")
+    return buffer.getvalue()
+
+
+def _make_image_dataset(root: Path, *, truncate_one: bool = False,
+                        n_good: int = 4) -> Path:
+    """造一个最小可质检数据集: images/train + labels/train + data.yaml。"""
+    images = root / "images" / "train"
+    labels = root / "labels" / "train"
+    images.mkdir(parents=True)
+    labels.mkdir(parents=True)
+    for index in range(n_good):
+        (images / f"good{index}.jpg").write_bytes(_jpeg_bytes())
+        (labels / f"good{index}.txt").write_text("0 0.5 0.5 0.2 0.2\n", encoding="utf-8")
+    if truncate_one:
+        payload = _jpeg_bytes()
+        (images / "broken.jpg").write_bytes(payload[: len(payload) // 3])
+        (labels / "broken.txt").write_text("0 0.5 0.5 0.2 0.2\n", encoding="utf-8")
+    yaml_path = root / "data.yaml"
+    yaml_path.write_text("path: .\ntrain: images/train\nnc: 2\n"
+                         "names: {0: player, 1: football}\n", encoding="utf-8")
+    return yaml_path
 
 
 def test_clean_dataset_all_pass(demo_yaml):
@@ -80,3 +109,42 @@ def test_box_geometry_one_kind_per_line(demo_yaml_degenerate_and_extreme):
     assert r.severity == CheckSeverity.WARNING
     assert r.details["issue_kinds"].get("extreme_aspect_ratio", 0) == 0
     assert sum(r.details["issue_kinds"].values()) >= 1
+
+
+# ---------------------------------------------------------------- 图片完整性
+# 这一项要抓的是"其它检查全都看不见"的失败:图在、大小非零、有标签, 但打不开。
+
+def test_image_decodable_passes_on_intact_images(tmp_path):
+    r = _run(_make_image_dataset(tmp_path), "image_decodable")
+    assert r.severity == CheckSeverity.PASS
+    assert r.details["n_bad"] == 0
+    assert r.details["total_images"] == 4
+
+
+def test_image_decodable_flags_truncated_image(tmp_path):
+    """截断的 JPEG: 前面几项检查都认为它正常, 只有这一项能抓出来。"""
+    yaml_path = _make_image_dataset(tmp_path, truncate_one=True, n_good=20)
+    assert _run(yaml_path, "pair_existence").severity == CheckSeverity.PASS
+    assert _run(yaml_path, "annotation_coverage").severity == CheckSeverity.PASS
+    r = _run(yaml_path, "image_decodable")
+    assert r.severity == CheckSeverity.WARNING        # 1/21 ≈ 4.8% < 10%
+    assert r.details["n_bad"] == 1
+    assert r.details["bad_preview"][0]["file"] == "broken.jpg"
+
+
+def test_image_decodable_escalates_to_error_when_widespread(tmp_path):
+    """大面积打不开 → ERROR（3/5 = 60% ≥ 10%）。"""
+    yaml_path = _make_image_dataset(tmp_path, truncate_one=True, n_good=2)
+    for name in ("good0", "good1"):
+        payload = _jpeg_bytes()
+        (tmp_path / "images" / "train" / f"{name}.jpg").write_bytes(payload[: len(payload) // 4])
+    r = _run(yaml_path, "image_decodable")
+    assert r.severity == CheckSeverity.ERROR
+    assert r.details["n_bad"] == 3
+
+
+def test_image_decodable_reports_clean_dataset_without_noise(demo_yaml):
+    """干净集上它不该产生任何告警（否则每个数据集都会平白多一条 WARNING）。"""
+    r = _run(demo_yaml, "image_decodable")
+    assert r.severity in (CheckSeverity.PASS, CheckSeverity.INFO)
+    assert r.details.get("n_bad", 0) == 0

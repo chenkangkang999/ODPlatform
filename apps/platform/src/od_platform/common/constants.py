@@ -68,3 +68,4 @@ UNLABELED_INFO_RATIO: float = 0.05       # ≥ 此值 → INFO
 SPLIT_MIN_IMAGES: int = 30               # split 图数低于此值 → INFO(评估方差偏大)
 CLASS_IMBALANCE_INFO_RATIO: float = 10.0 # 类别失衡比 ≥ 此值 → INFO(≥50 由 STATS_MAX 接管)
 ORPHAN_LABELS_WARN_RATIO: float = 0.10   # 孤儿标签占比 ≥ 此值 → WARNING
+IMAGE_DECODE_ERROR_RATIO: float = 0.10   # 打不开的图占比 ≥ 此值 → ERROR(疑似批量导出/传输损坏)

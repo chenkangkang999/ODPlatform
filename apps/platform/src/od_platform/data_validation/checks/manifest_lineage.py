@@ -1,18 +1,26 @@
 """check: manifest_lineage —— 逐样本核验:在契约说的 split 里、内容 sha256 没变。
-changed(内容变了)/ moved(split 挪了)/ missing(丢了)分开计数。"""
+changed(内容变了)/ moved(split 挪了)/ missing(丢了)分开计数。
+
+★ 进度反馈: 这个检查要对**每个样本重读标签文件算 SHA256**, 是 D4 里最慢的一项
+  （1232 个样本本地约 1 秒, 十万级数据集就是分钟级）。此前它全程静默, 用户无法
+  区分"在算"和"卡死", 所以接入 ProgressReporter 按比例打点。
+"""
 from __future__ import annotations
 
 import hashlib
+import logging
 from pathlib import Path
 from typing import Dict, List, Tuple
 
 from od_platform.common.constants import LINEAGE_MAX_DETAIL
+from od_platform.common.progress import ProgressReporter
 from od_platform.data_validation.checks._lineage import load_manifest_from_yaml
 from od_platform.data_validation.registry import (
     CheckContext, CheckResult, CheckSeverity, check,
 )
 
 _NAME = "manifest_lineage"
+logger = logging.getLogger(__name__)
 
 
 def _sha256(path: Path) -> str:
@@ -37,7 +45,9 @@ def validate_manifest_lineage(ctx: CheckContext) -> CheckResult:
     changed: List[str] = []
     moved: List[dict] = []
     missing: List[str] = []
-    for s in manifest.samples:
+    progress = ProgressReporter(f"D4 {_NAME}", len(manifest.samples),
+                                logger=logger, unit="个样本")
+    for index, s in enumerate(manifest.samples, 1):
         lbl = disk.get((s.split, s.stem))
         if lbl is None:
             elsewhere = disk_splits_of_stem.get(s.stem)
@@ -47,6 +57,8 @@ def validate_manifest_lineage(ctx: CheckContext) -> CheckResult:
                 missing.append(s.stem)
         elif _sha256(lbl) != s.sha256:
             changed.append(s.stem)
+        progress.update(index)
+    progress.finish()
 
     details = {"n_samples": len(manifest.samples),
                "n_changed": len(changed), "n_moved": len(moved), "n_missing": len(missing),

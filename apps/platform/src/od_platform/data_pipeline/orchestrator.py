@@ -19,6 +19,7 @@ from od_platform.common.constants import (
 )
 from od_platform.common.lineage import TOOL_VERSION, compute_data_fingerprint, SplitManifest
 from od_platform.common import stamp
+from od_platform.common.progress import ProgressReporter
 from od_platform.common.run_context import RunContext
 from od_platform.data_pipeline.convert.registry import ConvertOptions
 from od_platform.data_pipeline.convert.service import convert_data_to_yolo
@@ -84,9 +85,19 @@ class DatasetPipeline:
         self._check_coverage()
 
     def _check_coverage(self) -> None:
-        """覆盖率闸门:标注数/图像数 过低时直接拒跑。"""
-        n_images = sum(1 for p in self.raw_images.rglob("*")
-                       if p.suffix.lower() in IMAGE_EXTENSIONS)
+        """覆盖率闸门:标注数/图像数 过低时直接拒跑。
+
+        这里要先数一遍图像总数, 而总数正是"要数出来的东西"—— 所以走"总量未知"
+        模式（每 UNKNOWN_TOTAL_STEP 项打一个点）。大数据集上是几秒到几十秒的
+        静默等待, 接入进度反馈后用户能看到它在动。
+        """
+        progress = ProgressReporter("清点图像", 0, logger=logger, unit="张图")
+        n_images = 0
+        for path in self.raw_images.rglob("*"):
+            if path.suffix.lower() in IMAGE_EXTENSIONS:
+                n_images += 1
+                progress.update(n_images)
+        progress.finish(done=n_images)
         if n_images == 0:
             raise FileNotFoundError(f"图像目录为空: {self.raw_images}")
         if self.annotation_format == AnnotationFormat.COCO:
@@ -109,18 +120,32 @@ class DatasetPipeline:
 
     def _scan(self, staging: Path, classes: List[str]):
         image_index: Dict[str, Path] = {}
-        for p in sorted(self.raw_images.rglob("*")):
-            if p.suffix.lower() in IMAGE_EXTENSIONS:
-                image_index[p.stem] = p
+        candidates = sorted(self.raw_images.rglob("*"))
+        progress_images = ProgressReporter("扫描图像目录", len(candidates),
+                                           logger=logger, unit="个条目")
+        for position, path in enumerate(candidates, 1):
+            if path.suffix.lower() in IMAGE_EXTENSIONS:
+                image_index[path.stem] = path
+            progress_images.update(position)
+        progress_images.finish(done=len(candidates))
+
         labels_per_image: Dict[str, List[str]] = defaultdict(list)
         label_bytes: Dict[str, bytes] = {}
-        for txt in sorted(staging.glob("*.txt")):
-            label_bytes[txt.stem] = txt.read_bytes()
-            for line in txt.read_text(encoding="utf-8").splitlines():
+        label_files = sorted(staging.glob("*.txt"))
+        progress_labels = ProgressReporter("读取标签", len(label_files),
+                                           logger=logger, unit="个标签文件")
+        for position, txt in enumerate(label_files, 1):
+            # 只读一次: 此前 read_bytes() 与 read_text() 把每个文件读了两遍,
+            # 实测 1232 个标签因此花了 13.5s, 而复制 1232 对(图+标签)只要 2.9s。
+            raw_bytes = txt.read_bytes()
+            label_bytes[txt.stem] = raw_bytes
+            for line in raw_bytes.decode("utf-8").splitlines():
                 line = line.strip()
                 if line:
                     idx = int(line.split()[0])
                     labels_per_image[txt.stem].append(classes[idx])
+            progress_labels.update(position)
+        progress_labels.finish(done=len(label_files))
         return image_index, labels_per_image, label_bytes
 
     # ---- 主流程 ----

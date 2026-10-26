@@ -15,6 +15,7 @@ from typing import Dict, List
 
 from od_platform.common import paths
 from od_platform.common.lineage import SplitManifest
+from od_platform.common.progress import ProgressReporter
 
 logger = logging.getLogger(__name__)
 
@@ -88,15 +89,25 @@ def _copy_pair(img: Path, lbl: Path, out: SplitOutputDirs, split: str) -> None:
 
 def materialize(manifest: SplitManifest, source: SplitSourceDirs,
                 out: SplitOutputDirs) -> Dict[str, int]:
-    """按 manifest 物化。返回各 split 的样本数。"""
+    """按 manifest 物化。返回各 split 的样本数。
+
+    这是 D3 里最慢的一步（每个样本要复制图 + 标签两个文件）, 所以接入进度反馈:
+    十万级数据集会跑很久, 没有反馈用户无法区分"在复制"和"卡死"。
+    """
     for leaf in out.leaves:
         _assert_within(paths.PROCESSED_DATA_DIR, leaf)
         _safe_clear(leaf)
     counts: Dict[str, int] = {}
+    total = sum(len(manifest.stems_of(split)) for split in _SPLITS)
+    progress = ProgressReporter("物化 processed", total, logger=logger, unit="个样本")
+    done = 0
     for split in _SPLITS:
         stems = manifest.stems_of(split)
         for stem in stems:
             img, lbl = source.resolve(stem)
             _copy_pair(img, lbl, out, split)
+            done += 1
+            progress.update(done)
         counts[split] = len(stems)
+    progress.finish(done=done)
     return counts
