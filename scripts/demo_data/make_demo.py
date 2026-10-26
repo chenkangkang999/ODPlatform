@@ -28,7 +28,12 @@ def _make_jpg(path, seed):
     """生成 640x480 随机噪声图(可被 cv2/ultralytics 读取)."""
     rng = np.random.RandomState(seed)
     img = rng.randint(0, 256, (480, 640, 3), dtype=np.uint8)
-    cv2.imwrite(str(path), img)
+    # OpenCV的文件路径接口在部分Windows版本下无法写入中文路径。
+    # 编码与文件写入分开，且不能忽略编码失败。
+    success, encoded = cv2.imencode(".jpg", img)
+    if not success:
+        raise OSError(f"演示图片编码失败: {path}")
+    path.write_bytes(encoded.tobytes())
 
 
 for i in range(51):

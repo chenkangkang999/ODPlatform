@@ -25,10 +25,9 @@ body:not([data-page=overview]) .nav-track{display:none}body:not([data-page=overv
 @keyframes appReveal{from{opacity:.25;transform:translateY(5px)}to{opacity:1;transform:none}}.page:not([hidden]){animation:appReveal .18s ease-out}
 @media(prefers-reduced-motion:reduce){.app-icon,.kit-body,.kit-stripe,.club-display>svg,.scene-dots button{transition:none}.scene-carousel{scroll-behavior:auto}.page:not([hidden]){animation:none}}
 
-/* One visual language across all three scenes: the same photographic home ground. */
-.scene-data,.scene-voice{background:linear-gradient(90deg,#041a15ed 0%,#041a15ac 47%,#041a1520 100%),url('assets/stadium-dusk.png') center 64%/cover}
-.scene-data{background-position:center,65% 56%}
-.scene-voice{background-position:center,43% 53%}
+/* One photographic palette, three distinct views: pitch-side, above, commentary. */
+.scene-data{--scene-image:url('assets/stadium-tactical-v2.png');background:linear-gradient(90deg,#041a15e8 0%,#041a158f 47%,#041a151a 100%),var(--scene-image) center 59%/cover}
+.scene-voice{--scene-image:url('assets/stadium-commentary-v2.png');background:linear-gradient(90deg,#041a15dd 0%,#041a157d 47%,#041a1510 100%),var(--scene-image) center 65%/cover}
 .scene-data .scene-copy,.scene-voice .scene-copy{max-width:620px}
 .scene-data .scene-tag,.scene-voice .scene-tag{background:#001d175c;border-color:#a0bf8935;color:#cbdab9}
 .scene-text-link{color:#cedabd;text-shadow:0 1px 5px #00150f}
@@ -38,5 +37,13 @@ body:not([data-page=overview]) .nav-track{display:none}body:not([data-page=overv
 .scene-arrows #scene-autoplay[aria-pressed=true]{background:#bed08a12;border-color:#b7cf8042}
 .scene-arrows #scene-autoplay:disabled{opacity:.65}
 @media(max-width:960px){.scene-data .scene-copy,.scene-voice .scene-copy{max-width:100%}.scene-data,.scene-voice{background-position:center,72% 60%}.scene-controls{gap:8px}.scene-dots{margin-right:5px}}
-@media(max-width:640px){.scene-data,.scene-voice{background-image:linear-gradient(90deg,#041a15ee 0%,#041a15bd 50%,#041a1566 100%),url('assets/stadium-dusk.png');background-position:center,82% 60%}.scene-scroll-hint{font-size:8px;letter-spacing:0}.scene-scroll-hint>span{margin-left:3px}.scene-dots{margin-right:0;gap:0}.scene-dots button{width:18px}.scene-dots button[aria-pressed=true]{width:29px}.scene-arrows{gap:5px}.scene-arrows button{width:28px}.scene-arrows #scene-autoplay{min-width:60px;padding:0 5px;font-size:8px}}
+
+/* Controls occupy their own row; the live summary stretches only with the image. */
+.home-stage{grid-template-rows:auto auto;row-gap:12px;align-items:stretch}
+.home-stage>.scene-window{display:contents}
+.home-stage .scene-carousel{grid-column:1;grid-row:1;align-self:stretch}
+.home-stage .scene-controls{grid-column:1;grid-row:2;margin-top:0}
+.home-stage>.monitor-peek{grid-column:2;grid-row:1;align-self:stretch}
+@media(max-width:640px){.home-stage{row-gap:12px}.home-stage .scene-carousel{grid-column:1;grid-row:1}.home-stage .scene-controls{grid-column:1;grid-row:2}.home-stage>.monitor-peek{grid-column:1;grid-row:3}.scene-data{background-position:center,66% 50%}.scene-voice{background-position:center,75% 60%}}
+@media(max-width:640px){.scene-data,.scene-voice{background-image:linear-gradient(90deg,#041a15ee 0%,#041a15bd 50%,#041a1566 100%),var(--scene-image);background-position:center,72% 60%}.scene-scroll-hint{font-size:8px;letter-spacing:0}.scene-scroll-hint>span{margin-left:3px}.scene-dots{margin-right:0;gap:0}.scene-dots button{width:18px}.scene-dots button[aria-pressed=true]{width:29px}.scene-arrows{gap:5px}.scene-arrows button{width:28px}.scene-arrows #scene-autoplay{min-width:60px;padding:0 5px;font-size:8px}}
 @media(max-width:360px){.scene-scroll-hint{max-width:48px;line-height:1.5}.scene-scroll-hint>span{display:none}.scene-controls{gap:5px}.scene-arrows{gap:4px}.scene-arrows button{width:25px}.scene-arrows #scene-autoplay{min-width:56px}}

@@ -6,14 +6,14 @@
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <meta name="color-scheme" content="dark">
   <title>足球视觉分析平台 · Football Vision</title>
-  <link rel="stylesheet" href="{% static 'football_portal/style.css' %}?v=stage-6">
-  <link rel="stylesheet" href="{% static 'football_portal/home_hub.css' %}?v=stage-6">
-  <link rel="stylesheet" href="{% static 'football_portal/var_review.css' %}?v=stage-6">
-  <script src="{% static 'football_portal/app.js' %}?v=stage-6" defer></script>
-  <script src="{% static 'football_portal/home_hub.js' %}?v=stage-6" defer></script>
-  <script src="{% static 'football_portal/var_review.js' %}?v=stage-6" defer></script>
-  <link rel="stylesheet" href="{% static 'football_portal/monitor.css' %}?v=stage-6">
-  <script src="{% static 'football_portal/monitor.js' %}?v=stage-6" defer></script>
+  <link rel="stylesheet" href="{% static 'football_portal/style.css' %}?v=stage-7">
+  <link rel="stylesheet" href="{% static 'football_portal/home_hub.css' %}?v=stage-7">
+  <link rel="stylesheet" href="{% static 'football_portal/var_review.css' %}?v=stage-7">
+  <script src="{% static 'football_portal/app.js' %}?v=stage-7" defer></script>
+  <script src="{% static 'football_portal/home_hub.js' %}?v=stage-7" defer></script>
+  <script src="{% static 'football_portal/var_review.js' %}?v=stage-7" defer></script>
+  <link rel="stylesheet" href="{% static 'football_portal/monitor.css' %}?v=stage-7">
+  <script src="{% static 'football_portal/monitor.js' %}?v=stage-7" defer></script>
 </head>
 <body data-page="overview" data-monitor-interval-ms="{{ monitor_interval_ms }}">
 <a class="skip-link" href="#main-content">跳到主要内容</a>
@@ -59,19 +59,19 @@
             </article>
             <article class="scene-card scene-data" data-scene="data" aria-label="数据观察">
               <div class="scene-copy"><span class="scene-tag">数据观察</span><h2>看见目标，<br>也看懂发生了什么。</h2><p>从逐帧变化到画面位置，打开真实任务，<br class="desktop-break">让图表回答你的问题。</p><div class="scene-actions"><a href="#analysis" class="button button-white">进入数据分析 ↗</a><a href="#history" class="scene-text-link">打开比赛档案</a></div></div>
-              <div class="tactics-art" aria-hidden="true"><svg viewBox="0 0 300 340" fill="none"><rect x="25" y="20" width="250" height="300" rx="2"/><path d="M25 170h250M100 20v55h100V20M100 320v-55h100v55"/><circle cx="150" cy="170" r="45"/><circle cx="150" cy="170" r="3" class="tactics-dot"/><path d="m82 220 55-39 40 57 50-77" class="tactics-route"/><circle cx="82" cy="220" r="8" class="tactics-dot"/><circle cx="137" cy="181" r="8" class="tactics-dot"/><circle cx="177" cy="238" r="8" class="tactics-dot"/><circle cx="227" cy="161" r="8" class="tactics-dot"/></svg></div><span class="scene-caption">STADIUM AT DUSK · 数据与证据</span>
+              <span class="scene-caption">FROM ABOVE · AI 视觉场景</span>
             </article>
             <article class="scene-card scene-voice" data-scene="voice" aria-label="智能解说">
-              <div class="scene-copy"><span class="scene-tag">场边解说席</span><h2>把数据，<br>变成听得懂的解说。</h2><p>让智能助手围绕你的检测记录说话，<br class="desktop-break">报告、诊断、提问，由你开场。</p><div class="scene-actions"><a href="#assistant" class="button button-white">打开 AI 解说 ↗</a></div></div><div class="voice-art" aria-hidden="true"><span class="voice-spark">✦</span><div class="voice-wave"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div><span>THE MATCH. EXPLAINED.</span></div><span class="scene-caption">STADIUM AT DUSK · 场边解说席</span>
+              <div class="scene-copy"><span class="scene-tag">场边解说席</span><h2>把数据，<br>变成听得懂的解说。</h2><p>让智能助手围绕你的检测记录说话，<br class="desktop-break">报告、诊断、提问，由你开场。</p><div class="scene-actions"><a href="#assistant" class="button button-white">打开 AI 解说 ↗</a></div></div><span class="scene-caption">COMMENTARY BOX · AI 视觉场景</span>
             </article>
           </div>
           <div class="scene-controls"><span class="scene-scroll-hint">拖动探索 <span aria-hidden="true">↔</span></span><div class="scene-dots" aria-label="选择场景"><button type="button" data-scene-dot="0" aria-label="球场现场" aria-pressed="true"></button><button type="button" data-scene-dot="1" aria-label="数据观察" aria-pressed="false"></button><button type="button" data-scene-dot="2" aria-label="智能解说" aria-pressed="false"></button></div><div class="scene-arrows"><button id="scene-autoplay" type="button" aria-pressed="false" aria-label="暂停自动轮播">暂停轮播</button><button id="scene-prev" type="button" aria-label="上一个场景">←</button><button id="scene-next" type="button" aria-label="下一个场景">→</button></div></div><span id="scene-live" class="sr-only" aria-live="polite"></span>
         </div>
         <aside class="monitor-peek" aria-label="实时任务与数据摘要">
-          <span class="section-kicker">MATCH OPERATIONS</span><h2>场边运行台</h2><p>任务在处理，证据在积累。<br>从这里看见项目的真实进展。</p>
-          <div class="monitor-online"><i></i><span id="monitor-peek-status">正在读取状态</span></div>
-          <dl><dt>待处理 / 运行中</dt><dd id="monitor-peek-queue">—</dd><dt>本地数据文件</dt><dd id="monitor-peek-data">—</dd><dt>人工复核案例</dt><dd id="monitor-peek-evidence">—</dd><dt>已登记数据</dt><dd id="monitor-peek-size">—</dd></dl>
-          <a href="#monitor" class="button button-secondary">进入运行监控 ↗</a><small>任务按当前会话统计<br>数据文件按项目本地清单核验</small>
+          <div class="peek-heading"><span class="section-kicker">LIVE DATA</span><div class="monitor-online"><i></i><span id="monitor-peek-status">正在读取状态</span></div></div>
+          <h2>此刻的观察室</h2>
+          <dl><div><dt>检测队列</dt><dd id="monitor-peek-queue">—</dd></div><div><dt>本地数据文件</dt><dd id="monitor-peek-data">—</dd></div><div><dt>人工复核记录</dt><dd id="monitor-peek-evidence">—</dd></div><div><dt>本地资料</dt><dd id="monitor-peek-size">—</dd></div></dl>
+          <a href="#monitor" class="button button-secondary">查看数据与任务 ↗</a><small>会话任务 · 本地数据清单核验</small>
         </aside>
       </div>
       <div class="metric-grid">

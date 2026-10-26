@@ -8,8 +8,8 @@ import numpy as np
 import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
-from football_portal.bridge_worker import _reader, dump, run_request
-from football_portal.results import normalize_payload
+from football_portal.bridge_worker import PitchAnalyzer, _reader, dump, run_request
+from football_portal.results import normalize_frame, normalize_payload
 
 
 def request_for(tmp_path, source):
@@ -22,6 +22,18 @@ def request_for(tmp_path, source):
 def fake_detector(image):
     return [{"cls": "ball", "conf": .8, "xyxy": [10, 10, 18, 18]},
             {"cls": "player", "conf": .9, "xyxy": [30, 10, 45, 60]}], image.copy()
+
+
+def test_geometry_without_calibration_and_track_ids_does_not_fabricate_events():
+    analyzer = PitchAnalyzer(120, 80, "")
+    frame = normalize_frame({"frame_index": 0, "timestamp": 0,
+                             "image_size": {"width": 120, "height": 80},
+                             "boxes": [{"cls": "player", "conf": .9, "xyxy": [10, 10, 20, 30]},
+                                       {"cls": "player", "conf": .9, "xyxy": [11, 10, 21, 30]}]})
+    events = analyzer.analyze(frame)
+    assert events == []
+    assert analyzer.calibrated is False
+    assert analyzer.skip_reason
 
 
 def test_image_all_boxes_and_actual_statistics(tmp_path):

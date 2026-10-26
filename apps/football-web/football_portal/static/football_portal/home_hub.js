@@ -106,6 +106,21 @@
     });
   }
 
+  function alignSceneAfterResize() {
+    if (!carousel?.clientWidth || !scenes[currentScene]) return;
+    if (scrollFrame !== null) cancelAnimationFrame(scrollFrame);
+    scrollFrame = null;
+    const edge = carousel.getBoundingClientRect().left + carousel.clientLeft;
+    const left = carousel.scrollLeft + scenes[currentScene].getBoundingClientRect().left - edge;
+    // A breakpoint changes card width: align immediately rather than leaving half a card.
+    const behavior = carousel.style.scrollBehavior;
+    carousel.style.scrollBehavior = 'auto';
+    carousel.scrollLeft = left;
+    carousel.style.scrollBehavior = behavior;
+    markScene(currentScene);
+    syncAutoplay();
+  }
+
   function endDrag(event) {
     if (!drag || event.pointerId !== drag.pointerId) return;
     const wasDragging = drag.active;
@@ -170,8 +185,8 @@
         event.stopPropagation();
       }
     }, true);
-    window.addEventListener('resize', queueSceneSync, {passive: true});
-    if ('ResizeObserver' in window) new ResizeObserver(queueSceneSync).observe(carousel);
+    window.addEventListener('resize', alignSceneAfterResize, {passive: true});
+    if ('ResizeObserver' in window) new ResizeObserver(alignSceneAfterResize).observe(carousel);
     sceneWindow?.addEventListener('pointerenter', event => {
       if (event.pointerType !== 'touch') {pointerInside = true; syncAutoplay();}
     });

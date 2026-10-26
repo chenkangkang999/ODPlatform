@@ -6,15 +6,46 @@ import pytest
 import yaml
 
 from od_platform.common import paths
+from od_platform.common.dataset_yaml import load_dataset_yaml, resolve_dataset_root
 from od_platform.data_pipeline.orchestrator import DatasetPipeline
 
 
+def _demo_artifacts_ready(yaml_path: Path) -> bool:
+    """配置被Git跟踪，但数据和manifest不被跟踪；两者都存在才能复用。"""
+    if not yaml_path.is_file():
+        return False
+    try:
+        doc = load_dataset_yaml(yaml_path)
+        root = resolve_dataset_root(yaml_path, doc.get("path"))
+        manifest_ref = doc.get("odp_meta", {}).get("manifest_path")
+        if not isinstance(manifest_ref, str):
+            return False
+        manifest = resolve_dataset_root(yaml_path, manifest_ref)
+        if root is None or manifest is None or not manifest.is_file():
+            return False
+        for split in ("train", "val", "test"):
+            image_ref = doc.get(split)
+            if not isinstance(image_ref, str):
+                return False
+            images = root / image_ref
+            labels = root / "labels" / split
+            if not images.is_dir() or not any(p.is_file() for p in images.iterdir()):
+                return False
+            if not labels.is_dir() or not any(p.is_file() for p in labels.glob("*.txt")):
+                return False
+    except (OSError, ValueError, TypeError, AttributeError, yaml.YAMLError):
+        return False
+    return True
+
+
 def _ensure_demo_yaml() -> Path:
-    """确保 D3 已产出 demo;没跑过就现场跑一遍。"""
+    """缺少成品或manifest时重建；不能仅凭签入Git的YAML判断就绪。"""
     yaml_path = paths.dataset_yaml_path("demo")
-    if not yaml_path.exists():
+    if not _demo_artifacts_ready(yaml_path):
         DatasetPipeline("demo", "pascal_voc",
                         split_strategy="stratified_multilabel").run()
+    if not _demo_artifacts_ready(yaml_path):
+        raise RuntimeError("demo流水线未生成完整图片、标签与manifest，不能运行验证测试")
     return yaml_path
 
 
@@ -110,8 +141,8 @@ def demo_yaml_class_missing_train(tmp_path) -> Path:
     """train 里删光 反光衣(class 1)、并保证 val 里有一条 → missing_in_train WARNING。"""
     def mutate(root: Path):
         for lbl in (root / "labels" / "train").glob("*.txt"):
-            kept = [l for l in lbl.read_text(encoding="utf-8").splitlines()
-                    if l.strip() and not l.startswith("1 ")]
+            kept = [line for line in lbl.read_text(encoding="utf-8").splitlines()
+                    if line.strip() and not line.startswith("1 ")]
             lbl.write_text("\n".join(kept) + ("\n" if kept else ""), encoding="utf-8")
         val_lbl = _first_label(root, "val")
         val_lbl.write_text(val_lbl.read_text(encoding="utf-8") + "1 0.50 0.50 0.20 0.20\n",

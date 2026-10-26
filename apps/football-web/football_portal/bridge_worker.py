@@ -299,17 +299,17 @@ def run_request(request: dict, *, detector=None) -> dict:
                         fps = info.get("fps")
                         if not fps or fps <= 0:
                             raise ValueError("视频缺少可靠帧率")
-                        # 优先 mp4(H.264 优先、回退 MPEG-4)，浏览器/Windows 兼容性最好；再回退 webm
+                        # 优先H.264；不可用时先选浏览器支持的VP8，再尝试MPEG-4。
                         video_name, codec = "annotated.mp4", "H.264"
                         writer = cv2.VideoWriter(str(output / video_name), cv2.VideoWriter_fourcc(*"avc1"), fps / stride, (width, height))
                         if not writer.isOpened():
                             writer.release()
-                            video_name, codec = "annotated.mp4", "MPEG4"
-                            writer = cv2.VideoWriter(str(output / video_name), cv2.VideoWriter_fourcc(*"mp4v"), fps / stride, (width, height))
-                        if not writer.isOpened():
-                            writer.release()
                             video_name, codec = "annotated.webm", "VP8"
                             writer = cv2.VideoWriter(str(output / video_name), cv2.VideoWriter_fourcc(*"VP80"), fps / stride, (width, height))
+                        if not writer.isOpened():
+                            writer.release()
+                            video_name, codec = "annotated.mp4", "MPEG4"
+                            writer = cv2.VideoWriter(str(output / video_name), cv2.VideoWriter_fourcc(*"mp4v"), fps / stride, (width, height))
                         if not writer.isOpened():
                             raise RuntimeError("视频编码器不可用；可查看首帧及逐帧数据")
                     writer.write(annotated)

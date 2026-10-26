@@ -42,7 +42,8 @@ jobs:
         run: |
           python scripts/demo_data/make_demo.py
           python scripts/demo_data/make_coco_demo.py
-          odp-transform demo || true
+          python scripts/demo_data/make_broken_demo.py
+          python -m od_platform.cli.transform_data --dataset demo --format pascal_voc --split-strategy stratified_multilabel
 
       - name: 测试 (pytest)
         run: pytest -q
