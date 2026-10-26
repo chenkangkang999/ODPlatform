@@ -1,0 +1,67 @@
+{% extends "showcase/base.html" %}
+{% block title %}推理演示 · ODPlatform 算法演示{% endblock %}
+
+{% block content %}
+<section class="card">
+  <div class="head">
+    <h2>上传一张图片，跑一次真实检测</h2>
+    <span class="badge info">设备 {{ device }}</span>
+  </div>
+  <p class="muted">
+    用的是页面 ①里那个权重（只训了 3 轮的冒烟级模型），所以会漏检 —— 那不是演示出错，
+    是诚实的现状。上限 {{ limits.max_mb }} MB，支持 {{ limits.suffixes }}。
+  </p>
+  <form class="upload" method="post" enctype="multipart/form-data">
+    {% csrf_token %}
+    <input type="file" name="image" accept="image/*" required>
+    <button type="submit">开始检测</button>
+  </form>
+</section>
+
+{% if error %}
+  <div class="error"><strong>没能处理这张图：</strong>{{ error }}</div>
+{% endif %}
+
+{% if result %}
+  <section class="card" id="detection-result" style="margin-top:18px">
+    <div class="head">
+      <h2>检测结果</h2>
+      <span class="badge {% if result.total %}ok{% else %}warn{% endif %}">
+        检出 {{ result.total }} 个目标
+      </span>
+      <span class="badge info">设备 {{ result.device }}</span>
+    </div>
+
+    {% if result.total %}
+      <table>
+        <tr><th>类别</th><th style="width:20%">数量</th></tr>
+        {% for name, count in result.counts.items %}
+          <tr><td>{{ name }}</td><td class="num">{{ count }}</td></tr>
+        {% endfor %}
+      </table>
+      <p class="muted">
+        本次参数：imgsz {{ result.parameters.imgsz }} · conf {{ result.parameters.conf }} ·
+        iou {{ result.parameters.iou }} · max_det {{ result.parameters.max_det }}
+        （全部来自 <code>configs/runtime/football.yaml</code> 的 detection 节）
+      </p>
+    {% else %}
+      <div class="note">
+        <strong>本次没有检测到任何目标。</strong>
+        这不是错误页面 —— 冒烟级模型在低置信度下漏检很常见。可以换一张目标更清晰的图，
+        或者去 <code>football.yaml</code> 把 detection.conf 调低再试。
+      </div>
+    {% endif %}
+
+    <div class="compare">
+      <figure>
+        <img src="{{ result.original }}" alt="原图">
+        <figcaption>原图</figcaption>
+      </figure>
+      <figure>
+        <img src="{{ result.annotated }}" alt="带检测框的结果图">
+        <figcaption>检测框（由 od_platform.visualization 绘制）</figcaption>
+      </figure>
+    </div>
+  </section>
+{% endif %}
+{% endblock %}

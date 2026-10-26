@@ -1,0 +1,191 @@
+{% extends "showcase/base.html" %}
+{% block title %}能力总览 · ODPlatform 算法演示{% endblock %}
+
+{% block content %}
+<div class="note info">
+  <strong>这一页刻意只讲能做到的事。</strong>
+  下面每个数值都从 <code>configs/runtime/*.yaml</code>、算法包的 settings 与
+  <code>models/trained/</code> 的训练产物实时读出；任何"计划中但没实现"的能力都单独标注，
+  不混进"已支持"里。
+</div>
+
+<div class="grid" style="margin-top:16px">
+
+  <!-- ============================== YOLO 检测 ============================== -->
+  <section class="card">
+    <div class="head">
+      <h2>① YOLO 目标检测</h2>
+      {% if report.detection.weights_exists %}
+        <span class="badge ok">权重就绪</span>
+      {% else %}
+        <span class="badge bad">权重缺失</span>
+      {% endif %}
+      {% if report.detection.training.is_smoke %}
+        <span class="badge warn">冒烟级（未收敛）</span>
+      {% endif %}
+    </div>
+
+    <table>
+      <tr><th>权重文件</th>
+          <td><span class="path">{{ report.detection.weights }}</span>
+              {% if report.detection.weights_megabytes %}
+                （{{ report.detection.weights_megabytes }} MB）
+              {% endif %}</td></tr>
+      <tr><th>类别</th><td>{{ report.detection.parameters.classes }}</td></tr>
+      <tr><th>置信度 / IoU 阈值</th>
+          <td class="num">{{ report.detection.parameters.conf }} / {{ report.detection.parameters.iou }}</td></tr>
+      <tr><th>输入尺寸 imgsz</th><td class="num">{{ report.detection.parameters.imgsz }}</td></tr>
+      <tr><th>每帧最多框数 max_det</th><td class="num">{{ report.detection.parameters.max_det }}</td></tr>
+    </table>
+
+    <h3>训练情况（读自 results.csv / args.yaml）</h3>
+    {% if report.detection.training.available %}
+      <table>
+        <tr><th>已训轮数</th>
+            <td class="num">{{ report.detection.training.epochs_done }}
+              {% if report.detection.training.planned_epochs %}
+                / 计划 {{ report.detection.training.planned_epochs }}
+              {% endif %}</td></tr>
+        <tr><th>基线模型</th><td><span class="path">{{ report.detection.training.base_model|default:"—" }}</span></td></tr>
+        <tr><th>训练分辨率 / batch / 设备</th>
+            <td class="num">{{ report.detection.training.imgsz|default:"—" }} /
+              {{ report.detection.training.batch|default:"—" }} /
+              {{ report.detection.training.device|default:"—" }}</td></tr>
+        <tr><th>Precision</th><td class="num">{{ report.detection.training.precision|floatformat:3 }}</td></tr>
+        <tr><th>Recall</th><td class="num">{{ report.detection.training.recall|floatformat:3 }}</td></tr>
+        <tr><th>mAP@50</th><td class="num">{{ report.detection.training.map50|floatformat:3 }}</td></tr>
+        <tr><th>mAP@50-95</th><td class="num">{{ report.detection.training.map50_95|floatformat:3 }}</td></tr>
+      </table>
+      {% if report.detection.training.is_smoke %}
+        <div class="note">
+          <strong>务必如实说明：</strong>该权重只训练了
+          {{ report.detection.training.epochs_done }} 轮，属于<b>跑通链路用的冒烟级模型</b>，不是可用模型。
+          yolo11n 一般需要 50~300 轮才收敛；当前 recall 偏低意味着<b>真实目标里有相当一部分被漏检</b>，
+          小目标（足球）尤其明显。
+        </div>
+      {% endif %}
+    {% else %}
+      <div class="note">读不到训练记录：{{ report.detection.training.reason }}</div>
+    {% endif %}
+  </section>
+
+  <!-- ============================== 跟踪 ============================== -->
+  <section class="card">
+    <div class="head">
+      <h2>② 多目标跟踪 BoT-SORT</h2>
+      <span class="badge ok">已接入</span>
+    </div>
+    <table>
+      <tr><th>跟踪器</th><td>BoT-SORT（ultralytics）</td></tr>
+      <tr><th>跟踪器配置</th><td><span class="path">{{ report.tracking.tracker_config }}</span></td></tr>
+      <tr><th>参数文件</th><td><span class="path">{{ report.tracking.external_tracker_file }}</span></td></tr>
+    </table>
+    <div class="note info">
+      赛场上有<b>两个跟踪器</b>，别被问混：对外产出 <code>track_id</code>（画在图上、写进
+      frames.jsonl）的是 ultralytics 的 BoT-SORT，参数在
+      <code>configs/runtime/botsort.yaml</code>；几何层内部另有一个自研跟踪器，只服务
+      越位/接触/球归属的时序判断，不对外暴露 ID，参数在 football.yaml 的 tracking 节。
+    </div>
+    <h3>几何层内部跟踪器参数</h3>
+    {% if report.tracking.internal_tracker_section %}
+      <table>
+        {% for key, value in report.tracking.internal_tracker_section.items %}
+          {% if key != "kalman" %}
+            <tr><th>{{ key }}</th><td class="num">{{ value }}</td></tr>
+          {% endif %}
+        {% endfor %}
+      </table>
+    {% else %}
+      <p class="muted">未配置</p>
+    {% endif %}
+  </section>
+
+  <!-- ============================== 场地几何 ============================== -->
+  <section class="card">
+    <div class="head">
+      <h2>③ 场地标定 + Homography 几何规则</h2>
+      {% if report.geometry.calibration.calibrated %}
+        <span class="badge ok">已标定</span>
+      {% else %}
+        <span class="badge bad">未标定</span>
+      {% endif %}
+    </div>
+
+    <div class="note {% if report.geometry.calibration.calibrated %}ok{% endif %}">
+      <strong>标定状态：</strong>{{ report.geometry.calibration.reason }}
+    </div>
+    {% if not report.geometry.calibration.calibrated %}
+      <div class="note">
+        <strong>因此：越位、出界、进球、接触这四类几何事件目前一条都不会产出。</strong>
+        这是设计行为而不是故障 —— 没有标定就没有"米"，用像素当米算出来的结论是假的。
+        要出事件先跑：<code>odp-calibrate --image &lt;一帧图&gt; --landmark &lt;点名&gt;:&lt;x&gt;,&lt;y&gt; ... --save default</code>
+      </div>
+    {% endif %}
+
+    <h3>场地尺寸（IFAB 标准，可在配置里覆盖）</h3>
+    <table>
+      <tr><th>长 × 宽</th>
+          <td class="num">{{ report.geometry.parameters.pitch.length }} ×
+            {{ report.geometry.parameters.pitch.width }} m</td></tr>
+      <tr><th>球门宽 / 罚球区纵深</th>
+          <td class="num">{{ report.geometry.parameters.pitch.goal_width }} /
+            {{ report.geometry.parameters.pitch.penalty_area_depth }} m</td></tr>
+    </table>
+
+    <h3>标定质量门槛</h3>
+    <table>
+      <tr><th>最少标定点</th><td class="num">{{ report.geometry.parameters.calibration.min_points }}</td></tr>
+      <tr><th>重投影误差上限</th>
+          <td class="num">{{ report.geometry.parameters.calibration.max_reprojection_error_m }} m</td></tr>
+      <tr><th>RANSAC 内点阈值</th>
+          <td class="num">{{ report.geometry.parameters.calibration.ransac_reprojection_px }} px</td></tr>
+    </table>
+
+    <h3>规则阈值</h3>
+    <table>
+      <tr><th>越位容差</th><td class="num">{{ report.geometry.parameters.rules.offside_margin_m }} m</td></tr>
+      <tr><th>接触距离</th><td class="num">{{ report.geometry.parameters.rules.collision_distance_m }} m</td></tr>
+      <tr><th>门线容差</th><td class="num">{{ report.geometry.parameters.rules.goal_line_tolerance_m }} m</td></tr>
+      <tr><th>进攻方向 / 进攻方</th>
+          <td>{{ report.geometry.parameters.rules.attacking_direction }} /
+              {{ report.geometry.parameters.rules.attacking_team }}</td></tr>
+    </table>
+  </section>
+
+  <!-- ============================== 动作识别 ============================== -->
+  <section class="card">
+    <div class="head">
+      <h2>④ 动作识别</h2>
+      {% if report.action.implemented %}
+        <span class="badge warn">已接入但未微调</span>
+      {% else %}
+        <span class="badge bad">未实现</span>
+      {% endif %}
+    </div>
+    <table>
+      <tr><th>模型族</th><td>{{ report.action.family }}（{{ report.action.model_name }}）</td></tr>
+      <tr><th>权重</th><td><span class="path">{{ report.action.checkpoint|default:"—" }}</span></td></tr>
+      <tr><th>送帧数 clip_length</th><td class="num">{{ report.action.clip_length }}</td></tr>
+      <tr><th>置信度阈值</th><td class="num">{{ report.action.confidence_threshold }}</td></tr>
+      <tr><th>取前 K 类</th><td class="num">{{ report.action.top_k }}</td></tr>
+    </table>
+    <div class="note">
+      <strong>如实说明两件事：</strong>
+      第一，实际加载的是 <b>VideoMAE V1 base + Kinetics-400</b>（400 类<b>通用</b>动作），
+      不是"VideoMAE V2"，也没有用足球数据微调过 —— 所以它对足球专项动作的判别力很有限。
+      第二，下列模型族是<b>预留位、代码里没有实现</b>，传进去只会降级为空结果：
+      {% if "slowfast" in report.action.planned_families %}<b>SlowFast 没有实现</b>{% endif %}
+      {% if "custom" in report.action.planned_families %}、<b>custom 没有实现</b>{% endif %}。
+      已实现的只有：{% for name in report.action.supported_families %}{{ name }}{% if not forloop.last %}、{% endif %}{% endfor %}。
+    </div>
+  </section>
+
+</div>
+
+<div class="note info" style="margin-top:18px">
+  配置来源：检测与跟踪参数读 <code>configs/runtime/football.yaml</code> 的 detection / tracking 节；
+  跟踪器细化参数读 <code>configs/runtime/botsort.yaml</code>；
+  美化映射读 <code>configs/runtime/infer_pipeline.yaml</code>。
+  改配置即改本页显示的值 —— 这一页没有任何写死的阈值。
+</div>
+{% endblock %}

@@ -1,0 +1,100 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}ODPlatform 算法能力演示{% endblock %}</title>
+  <style>
+    :root {
+      --bg: #0f1419; --panel: #171e26; --panel-2: #1e2732;
+      --line: #2b3644; --text: #dfe6ee; --muted: #92a0b0;
+      --ok: #3fb950; --warn: #d29922; --bad: #f85149; --accent: #58a6ff;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0; background: var(--bg); color: var(--text);
+      font-family: "Segoe UI", "Microsoft YaHei", system-ui, sans-serif;
+      line-height: 1.6;
+    }
+    header {
+      padding: 22px 28px 14px; border-bottom: 1px solid var(--line);
+      background: linear-gradient(180deg, #131a22, var(--bg));
+    }
+    header h1 { margin: 0 0 4px; font-size: 21px; }
+    header p { margin: 0; color: var(--muted); font-size: 13px; }
+    nav { padding: 10px 28px; border-bottom: 1px solid var(--line); }
+    nav a {
+      color: var(--accent); text-decoration: none; margin-right: 18px;
+      font-size: 14px; padding: 4px 0;
+    }
+    nav a:hover { border-bottom: 2px solid var(--accent); }
+    main { padding: 24px 28px 60px; max-width: 1280px; }
+    h2 { font-size: 16px; margin: 0 0 12px; }
+    h3 { font-size: 14px; margin: 18px 0 8px; color: var(--muted); font-weight: 600; }
+    .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(360px, 1fr)); gap: 16px; }
+    .card {
+      background: var(--panel); border: 1px solid var(--line);
+      border-radius: 10px; padding: 16px 18px;
+    }
+    .card .head { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+    .card .head h2 { margin: 0; }
+    .muted { color: var(--muted); font-size: 13px; }
+    .badge {
+      display: inline-block; padding: 1px 9px; border-radius: 999px;
+      font-size: 12px; border: 1px solid currentColor; white-space: nowrap;
+    }
+    .badge.ok { color: var(--ok); }
+    .badge.warn { color: var(--warn); }
+    .badge.bad { color: var(--bad); }
+    .badge.info { color: var(--accent); }
+    table { border-collapse: collapse; width: 100%; margin-top: 8px; font-size: 13px; }
+    th, td { text-align: left; padding: 5px 8px; border-bottom: 1px solid var(--line); }
+    th { color: var(--muted); font-weight: 600; width: 42%; }
+    td.num { font-variant-numeric: tabular-nums; }
+    code, .path {
+      font-family: Consolas, "Cascadia Mono", monospace; font-size: 12px;
+      background: var(--panel-2); padding: 1px 6px; border-radius: 4px;
+      word-break: break-all;
+    }
+    .note {
+      margin-top: 12px; padding: 10px 12px; border-left: 3px solid var(--warn);
+      background: #1d1a12; border-radius: 0 6px 6px 0; font-size: 13px;
+    }
+    .note.info { border-left-color: var(--accent); background: #12202f; }
+    .note.ok { border-left-color: var(--ok); background: #12240f; }
+    form.upload { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
+    input[type=file] { color: var(--text); font-size: 14px; }
+    button {
+      background: var(--accent); color: #06121f; border: 0; border-radius: 7px;
+      padding: 9px 18px; font-size: 14px; font-weight: 600; cursor: pointer;
+    }
+    button:hover { filter: brightness(1.1); }
+    .error {
+      margin: 16px 0; padding: 12px 14px; border-radius: 8px;
+      border: 1px solid var(--bad); background: #2a1517; color: #ffd7d5;
+    }
+    .compare { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-top: 14px; }
+    .compare figure { margin: 0; }
+    .compare img { width: 100%; border-radius: 8px; border: 1px solid var(--line); display: block; }
+    .compare figcaption { color: var(--muted); font-size: 13px; margin-top: 6px; }
+    footer { padding: 18px 28px 40px; color: var(--muted); font-size: 12px; }
+    @media (max-width: 900px) { .compare { grid-template-columns: 1fr; } }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>ODPlatform · 算法能力演示</h1>
+    <p>足球检测 / 多目标跟踪 / 场地几何 / 动作识别 —— 本页所有数值都从配置层与训练产物实时读出，不写死在页面里。</p>
+  </header>
+  <nav>
+    <a href="{% url 'showcase:overview' %}">能力总览</a>
+    <a href="{% url 'showcase:infer' %}">推理演示</a>
+  </nav>
+  <main>
+    {% block content %}{% endblock %}
+  </main>
+  <footer>
+    独立演示站点（apps/platform/demo_ui），与队友的足球门户 apps/football-web 互不引用、互不修改。
+  </footer>
+</body>
+</html>
