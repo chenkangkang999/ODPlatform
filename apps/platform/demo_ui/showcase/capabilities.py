@@ -6,8 +6,8 @@
 
 """把"算法现在到底能做什么、参数是多少"如实汇总出来。
 
-★ 这一页的价值全在**诚实**。答辩现场会被追问的正是"训了多少轮""SlowFast 到底有没有
-  ""场地标定有没有做"—— 所以这里一条都不写死在模板里, 全部从真实来源读:
+★ 这一页的价值全在**诚实**。答辩现场会被追问的正是"训了多少轮""场地标定有没有做"
+  "动作识别到底加载的是什么模型"—— 所以这里一条都不写死在模板里, 全部从真实来源读:
 
     · 检测/跟踪参数  ← od_platform.detection.settings.DetectionSettings（football.yaml）
     · 动作识别       ← od_platform.action_recognition.settings.ActionRecognitionSettings
@@ -33,8 +33,22 @@ from od_platform.common import paths
 from od_platform.common.config_utils import read_section
 from od_platform.common.football_config import load_config
 from od_platform.detection.settings import DetectionSettings
+from od_platform.events import (
+    KIND_RED_CARD,
+    KIND_SEVERITY,
+    KIND_SUBSTITUTION,
+    KIND_YELLOW_CARD,
+    EventSettings,
+)
 from od_platform.geometric.calibration import default_calibration_dir
 from od_platform.geometric.settings import GeometrySettings
+from od_platform.pose import (
+    ACTION_JUDGES,
+    EVIDENCE_CANDIDATE,
+    EVIDENCE_INSUFFICIENT,
+    EVIDENCE_JUDGEMENT,
+    PoseSettings,
+)
 
 from showcase import demo_config
 
@@ -136,7 +150,7 @@ def training_summary(run_dir: Optional[Path] = None) -> Dict[str, Any]:
 def calibration_status(config: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
     """报告场地标定的真实状态。
 
-    ★ 这是"越位/出界/进球/接触能不能产出"的唯一开关: 没有标定就没有"米",
+    ★ 这是"接触/出界/角球/点球/任意球能不能产出"的唯一开关: 没有标定就没有"米",
       几何事件一律不产出（这是设计行为, 不是 bug）。所以演示页必须如实显示,
       而不是含糊地说"支持场地标定"。
 
@@ -178,6 +192,85 @@ def calibration_status(config: Optional[Dict[str, Any]] = None) -> Dict[str, Any
 
 
 # ============================================================
+# 姿态估计（od_platform.pose）—— 铲球 / 高抬腿 / 肘击 / 拉人推人
+# ============================================================
+
+def pose_summary() -> Dict[str, Any]:
+    """姿态估计子系统的真实状态与参数。
+
+    ★ 它和"动作识别"卡片是**两件不同的事**, 答辩时别混:
+
+        · 姿态估计 → 用**骨骼几何**判"姿态型动作"（铲球 / 高抬腿 / 肘击 / 拉人推人）;
+        · 动作识别 → 用**视频分类模型**判"语义型动作"（假摔 / 推搡 …）。
+
+      "高抬腿"就是"脚踝高于髋部" —— 这是几何判据, 拿分类器去猜反而更容易错。
+
+    ★ 权重拿不到就如实报不可用: 加载失败时 estimate() 会优雅降级为空列表
+      （不抛异常）, 页面上不能假装有结果。
+    """
+    try:
+        settings = PoseSettings.load()
+    except (ValueError, TypeError) as exc:
+        return {"available": False, "actions": [], "reason": f"姿态配置不合法: {exc}"}
+
+    weights = Path(str(settings.model.resolved_weights()))
+    exists = weights.is_file()
+    return {
+        "available": exists,
+        "weights": str(weights),
+        "weights_exists": exists,
+        "weights_megabytes": (round(weights.stat().st_size / (1024 * 1024), 2)
+                              if exists else None),
+        "parameters": settings.to_audit(),
+        "actions": list(ACTION_JUDGES),
+        "evidence_levels": [EVIDENCE_JUDGEMENT, EVIDENCE_CANDIDATE, EVIDENCE_INSUFFICIENT],
+        "reason": ("姿态权重就绪, 可用骨骼几何判定姿态型动作" if exists else
+                   f"找不到姿态权重 {weights} —— 判定会全部返回"
+                   f"「{EVIDENCE_INSUFFICIENT}」(证据不足), 不会瞎猜"),
+    }
+
+
+# ============================================================
+# 判罚事件（od_platform.events）—— 红牌 / 黄牌 / 换人
+# ============================================================
+
+def events_summary() -> Dict[str, Any]:
+    """判罚事件子系统的真实状态。
+
+    ★★ 必须如实说清的一件事: 这三项**依赖一个能检出「牌」的模型**。
+
+       本仓库现有足球权重只有 player / football 两类, **检不出牌** —— 所以本子系统
+       **目前一帧也不会产出事件**。要工作必须先扩类训练, 这是硬前提, 调参解决不了。
+
+    ★ 类别名映射是**配置项而非代码**: 模型训练时的类名可能叫 red_card / card_red /
+       红牌 …, 换模型时只改 configs/runtime/events.yaml, 不用动代码。这里读出来展示。
+    """
+    try:
+        settings = EventSettings.load()
+    except (ValueError, TypeError) as exc:
+        return {"available": False, "reason": f"事件配置不合法: {exc}"}
+
+    aliases = settings.classes
+    expected = sorted(set(aliases.red_card_aliases) | set(aliases.yellow_card_aliases))
+    # 现有模型认识哪些类: 取自本演示的展示映射（即 player / football 两个）
+    known = sorted(demo_config.LABEL_MAPPING)
+    missing = [name for name in expected if name not in known]
+    return {
+        # available 恒为 False, 且写成与配置无关的常量 —— 它反映的是事实
+        # （现有权重里没有"牌"这个类）, 而不是"某个参数没调好"。
+        "available": False,
+        "parameters": settings.to_audit(),
+        "event_kinds": [KIND_RED_CARD, KIND_YELLOW_CARD, KIND_SUBSTITUTION],
+        "severity": dict(KIND_SEVERITY),
+        "expected_card_classes": expected,
+        "known_classes": known,
+        "missing_card_classes": missing,
+        "reason": (f"判罚事件需要能检出「牌」的模型; 现有权重只有 {'/'.join(known)} 两类, "
+                   f"检不出 {', '.join(missing[:3])} 等 → 本子系统目前不产出任何事件"),
+    }
+
+
+# ============================================================
 # 汇总
 # ============================================================
 
@@ -214,8 +307,12 @@ def build_report(config: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         "action": {
             **action.to_audit(),
             # 已实现/仅预留的模型族直接从设置的常量来 —— 免得页面上把预留位
-            # 说成"已支持"。slowfast 属于 PLANNED_FAMILIES, 代码里没有实现。
+            # 说成"已支持"。slowfast 已按需求清单删除, PLANNED_FAMILIES 现在只剩 custom。
             "supported_families": list(SUPPORTED_FAMILIES),
             "planned_families": list(PLANNED_FAMILIES),
         },
+        # 两个新子系统: 姿态估计（骨骼几何）与判罚事件（红黄牌/换人）。
+        # 都走"从设置类读 + 如实报状态"的同一条路, 不在模板里写死任何结论。
+        "pose": pose_summary(),
+        "events": events_summary(),
     }

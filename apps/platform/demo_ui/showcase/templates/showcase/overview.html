@@ -84,7 +84,7 @@
       赛场上有<b>两个跟踪器</b>，别被问混：对外产出 <code>track_id</code>（画在图上、写进
       frames.jsonl）的是 ultralytics 的 BoT-SORT，参数在
       <code>configs/runtime/botsort.yaml</code>；几何层内部另有一个自研跟踪器，只服务
-      越位/接触/球归属的时序判断，不对外暴露 ID，参数在 football.yaml 的 tracking 节。
+      接触/球归属/球静止的时序判断，不对外暴露 ID，参数在 football.yaml 的 tracking 节。
     </div>
     <h3>几何层内部跟踪器参数</h3>
     {% if report.tracking.internal_tracker_section %}
@@ -116,7 +116,7 @@
     </div>
     {% if not report.geometry.calibration.calibrated %}
       <div class="note">
-        <strong>因此：越位、出界、进球、接触这四类几何事件目前一条都不会产出。</strong>
+        <strong>因此：接触、出界、角球、点球、任意球这五类几何事件目前一条都不会产出。</strong>
         这是设计行为而不是故障 —— 没有标定就没有"米"，用像素当米算出来的结论是假的。
         要出事件先跑：<code>odp-calibrate --image &lt;一帧图&gt; --landmark &lt;点名&gt;:&lt;x&gt;,&lt;y&gt; ... --save default</code>
       </div>
@@ -143,12 +143,17 @@
 
     <h3>规则阈值</h3>
     <table>
-      <tr><th>越位容差</th><td class="num">{{ report.geometry.parameters.rules.offside_margin_m }} m</td></tr>
       <tr><th>接触距离</th><td class="num">{{ report.geometry.parameters.rules.collision_distance_m }} m</td></tr>
       <tr><th>门线容差</th><td class="num">{{ report.geometry.parameters.rules.goal_line_tolerance_m }} m</td></tr>
-      <tr><th>进攻方向 / 进攻方</th>
-          <td>{{ report.geometry.parameters.rules.attacking_direction }} /
-              {{ report.geometry.parameters.rules.attacking_team }}</td></tr>
+      <tr><th>角球弧容差</th><td class="num">{{ report.geometry.parameters.rules.corner_arc_tolerance_m }} m</td></tr>
+      <tr><th>罚球点容差</th><td class="num">{{ report.geometry.parameters.rules.penalty_spot_tolerance_m }} m</td></tr>
+      <tr><th>人墙距离 / 容差</th>
+          <td class="num">{{ report.geometry.parameters.rules.free_kick_wall_distance_m }} m /
+              ±{{ report.geometry.parameters.rules.wall_distance_tolerance_m }} m</td></tr>
+      <tr><th>球静止判据</th>
+          <td class="num">{{ report.geometry.parameters.rules.ball_stationary_window_frames }} 帧内
+              ≥{{ report.geometry.parameters.rules.ball_stationary_min_samples }} 个观测，
+              位移 ≤{{ report.geometry.parameters.rules.ball_stationary_max_displacement_m }} m</td></tr>
     </table>
   </section>
 
@@ -173,9 +178,9 @@
       <strong>如实说明两件事：</strong>
       第一，实际加载的是 <b>VideoMAE V1 base + Kinetics-400</b>（400 类<b>通用</b>动作），
       不是"VideoMAE V2"，也没有用足球数据微调过 —— 所以它对足球专项动作的判别力很有限。
-      第二，下列模型族是<b>预留位、代码里没有实现</b>，传进去只会降级为空结果：
-      {% if "slowfast" in report.action.planned_families %}<b>SlowFast 没有实现</b>{% endif %}
-      {% if "custom" in report.action.planned_families %}、<b>custom 没有实现</b>{% endif %}。
+      第二，模型族里属于<b>预留位（代码里没有实现）</b>的只有：
+      {% for name in report.action.planned_families %}<b>{{ name }} 没有实现</b>{% if not forloop.last %}、{% endif %}{% empty %}（无）{% endfor %}。
+      传进去只会降级为空结果，不要在对外材料里当成已支持的能力。
       已实现的只有：{% for name in report.action.supported_families %}{{ name }}{% if not forloop.last %}、{% endif %}{% endfor %}。
     </div>
   </section>
