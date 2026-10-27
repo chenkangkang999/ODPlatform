@@ -10,8 +10,8 @@
 football.yaml 里对应的节:
     pitch:        场地尺寸（默认 IFAB 国际比赛标准场地）
     calibration:  标定的质量门槛与求解参数
-    rules:        越位/接触/出界/进球的判据阈值
-    analyzer:     事件冷却、球归属记忆、方向推断灵敏度
+    rules:        接触/出界/定位球的判据阈值（含"球静止"判定）
+    analyzer:     事件冷却、球归属记忆
 """
 from __future__ import annotations
 
@@ -42,29 +42,56 @@ class CalibrationSettings:
 
 @dataclass(frozen=True)
 class RuleSettings:
-    """规则判据阈值。"""
+    """规则判据阈值。
 
-    offside_margin_m: float = 0.0        # 越位容差（米）; 标定误差大时可放宽
+    ★ 历史变更（随需求清单调整）
+
+      移除了 ``offside_margin_m`` / ``attacking_direction`` / ``attacking_team`` ——
+      这三项**只为越位规则服务**, 而新需求清单里没有"越位", 留着就是一条死规则的
+      专属配置。``goal_defending_team`` 保留: 角球与球门球的唯一判据是最后触球方,
+      出界判定仍然需要它。
+
+      新增了定位球（角球/点球/任意球）的几何判据与"球静止"判定 —— 这三项是纯几何的,
+      不依赖任何模型。
+    """
+
     collision_distance_m: float = 2.0    # 接触候选的距离阈值（米）
     ball_assignment_tolerance_m: float = 0.5   # 用"谁离球最近"估计球归属的距离（米）
     ball_radius_m: float = 0.11          # 5 号球半径（米）, 整球过线判定的容差来源
     goal_line_tolerance_m: Optional[float] = None  # 门线容差; 不给则取 ball_radius_m
-    attacking_direction: str = "auto"    # auto | left | right
-    attacking_team: str = "auto"         # auto | A | B
     goal_defending_team: Optional[str] = None       # 该端球门的防守方; 不给则出界只能报 unknown
 
+    # ---- 定位球几何（角球 / 点球 / 任意球）----
+    corner_arc_tolerance_m: float = 0.5      # 球离最近角点多远仍算"摆在角球弧内"
+    penalty_spot_tolerance_m: float = 1.0    # 球离罚球点多远仍算"摆在罚球点上"
+    free_kick_wall_distance_m: float = 9.15  # IFAB Law 13: 防守方须退到 9.15 米
+    wall_distance_tolerance_m: float = 0.5   # 人墙距离的容差（判"是否已退够"）
+
+    # ---- "球静止"判定（任意球/点球的前置条件）----
+    # 球静止不能只看单帧速度（标定抖动会骗人）, 要看一个窗口内的总位移。
+    ball_stationary_window_frames: int = 15          # 回看多少帧
+    ball_stationary_min_samples: int = 5             # 窗口内至少要有几个观测
+    ball_stationary_max_displacement_m: float = 0.5  # 窗口内最大位移上限（米）
+
     def __post_init__(self) -> None:
-        if self.collision_distance_m <= 0:
-            raise ValueError("collision_distance_m 必须为正数")
-        if self.ball_assignment_tolerance_m <= 0:
-            raise ValueError("ball_assignment_tolerance_m 必须为正数")
-        if self.offside_margin_m < 0:
-            raise ValueError("offside_margin_m 不能为负")
-        for name, value in (("attacking_direction", self.attacking_direction),
-                            ("attacking_team", self.attacking_team)):
-            allowed = ("auto", "left", "right") if name == "attacking_direction" else ("auto", "a", "b")
-            if str(value).lower() not in allowed:
-                raise ValueError(f"{name} 只能是 {allowed}, 收到 {value!r}")
+        for name in ("collision_distance_m", "ball_assignment_tolerance_m",
+                     "ball_radius_m", "free_kick_wall_distance_m",
+                     "ball_stationary_max_displacement_m"):
+            if getattr(self, name) <= 0:
+                raise ValueError(f"{name} 必须为正数, 收到 {getattr(self, name)!r}")
+        for name in ("corner_arc_tolerance_m", "penalty_spot_tolerance_m",
+                     "wall_distance_tolerance_m"):
+            if getattr(self, name) < 0:
+                raise ValueError(f"{name} 不能为负, 收到 {getattr(self, name)!r}")
+        if self.ball_stationary_window_frames < 1:
+            raise ValueError("ball_stationary_window_frames 必须 >= 1")
+        if self.ball_stationary_min_samples < 1:
+            raise ValueError("ball_stationary_min_samples 必须 >= 1")
+        if self.ball_stationary_min_samples > self.ball_stationary_window_frames:
+            raise ValueError(
+                "ball_stationary_min_samples 不能大于 ball_stationary_window_frames"
+                f"（{self.ball_stationary_min_samples} > "
+                f"{self.ball_stationary_window_frames}）")
 
     @property
     def effective_goal_line_tolerance_m(self) -> float:
@@ -75,11 +102,14 @@ class RuleSettings:
 
 @dataclass(frozen=True)
 class AnalyzerSettings:
-    """分析器的时序与去重参数。"""
+    """分析器的时序与去重参数。
+
+    注: 原来的 ``min_direction_delta_m``（推断进攻方向）已随越位规则移除 ——
+    它只被越位候选用来自动判断进攻方向。
+    """
 
     event_cooldown_frames: int = 30      # 同类事件在该帧数内只报一次
     possession_memory_frames: int = 15   # 球归属结论保留多少帧
-    min_direction_delta_m: float = 1.0   # 推断进攻方向时球至少偏离多少米
 
 
 @dataclass(frozen=True)
@@ -100,10 +130,14 @@ class GeometrySettings:
             pitch=PitchSpec.from_config(read_section(config, "pitch")),
             calibration=_build(CalibrationSettings, config, "calibration", where),
             rules=_build(RuleSettings, config, "rules", where,
-                         aliases={"offside_margin": "offside_margin_m",
-                                  "collision_dist": "collision_distance_m",
+                         aliases={"collision_dist": "collision_distance_m",
                                   "ball_tol": "ball_assignment_tolerance_m",
-                                  "goal_line_x_tolerance": "goal_line_tolerance_m"}),
+                                  "goal_line_x_tolerance": "goal_line_tolerance_m",
+                                  "penalty_spot_tolerance": "penalty_spot_tolerance_m",
+                                  "free_kick_distance": "free_kick_wall_distance_m",
+                                  "ball_stationary_window": "ball_stationary_window_frames",
+                                  "ball_stationary_max_displacement":
+                                      "ball_stationary_max_displacement_m"}),
             analyzer=_build(AnalyzerSettings, config, "analyzer", where),
         )
         if config.get("event_cooldown_frames") is not None:
@@ -113,8 +147,7 @@ class GeometrySettings:
                 rules=settings.rules,
                 analyzer=AnalyzerSettings(
                     event_cooldown_frames=int(config["event_cooldown_frames"]),
-                    possession_memory_frames=settings.analyzer.possession_memory_frames,
-                    min_direction_delta_m=settings.analyzer.min_direction_delta_m))
+                    possession_memory_frames=settings.analyzer.possession_memory_frames))
         return settings
 
     @classmethod
@@ -140,16 +173,23 @@ class GeometrySettings:
             "calibration": {"min_points": self.calibration.min_points,
                             "max_reprojection_error_m": self.calibration.max_reprojection_error_m,
                             "ransac_reprojection_px": self.calibration.ransac_reprojection_px},
-            "rules": {"offside_margin_m": self.rules.offside_margin_m,
-                      "collision_distance_m": self.rules.collision_distance_m,
+            "rules": {"collision_distance_m": self.rules.collision_distance_m,
                       "ball_assignment_tolerance_m": self.rules.ball_assignment_tolerance_m,
                       "goal_line_tolerance_m": self.rules.effective_goal_line_tolerance_m,
-                      "attacking_direction": self.rules.attacking_direction,
-                      "attacking_team": self.rules.attacking_team,
-                      "goal_defending_team": self.rules.goal_defending_team},
+                      "goal_defending_team": self.rules.goal_defending_team,
+                      # 定位球几何（角球/点球/任意球）
+                      "corner_arc_tolerance_m": self.rules.corner_arc_tolerance_m,
+                      "penalty_spot_tolerance_m": self.rules.penalty_spot_tolerance_m,
+                      "free_kick_wall_distance_m": self.rules.free_kick_wall_distance_m,
+                      "wall_distance_tolerance_m": self.rules.wall_distance_tolerance_m,
+                      # 球静止判据
+                      "ball_stationary_window_frames":
+                          self.rules.ball_stationary_window_frames,
+                      "ball_stationary_min_samples": self.rules.ball_stationary_min_samples,
+                      "ball_stationary_max_displacement_m":
+                          self.rules.ball_stationary_max_displacement_m},
             "analyzer": {"event_cooldown_frames": self.analyzer.event_cooldown_frames,
-                         "possession_memory_frames": self.analyzer.possession_memory_frames,
-                         "min_direction_delta_m": self.analyzer.min_direction_delta_m},
+                         "possession_memory_frames": self.analyzer.possession_memory_frames},
         }
 
 

@@ -29,6 +29,15 @@ _CONFIG_ALIASES: Dict[str, str] = {
     "field_width": "width",
 }
 
+# 四个角点的名字 —— 角球弧的圆心就在这四点上。定义成常量而不是各处拼字符串,
+# 保证 homography 的"最近角点"查询与 landmarks 那张表永远指同一批点。
+CORNER_NAMES: Tuple[str, ...] = (
+    "corner_top_left",
+    "corner_top_right",
+    "corner_bottom_left",
+    "corner_bottom_right",
+)
+
 
 @dataclass(frozen=True)
 class PitchSpec:
@@ -48,6 +57,7 @@ class PitchSpec:
     goal_area_width: float = 18.32        # 球门区宽度
     penalty_spot_distance: float = 11.0   # 罚球点到门线
     centre_circle_radius: float = 9.15    # 中圈半径
+    corner_arc_radius: float = 1.0        # 角球弧半径（IFAB: 1 米）
 
     def __post_init__(self) -> None:
         for field in fields(self):
@@ -116,6 +126,19 @@ class PitchSpec:
             raise KeyError(
                 f"未知的场地关键点 {name!r}; 可用: {sorted(self.landmarks())}") from None
 
+    def corner_points(self) -> Dict[str, Point]:
+        """四个角点 —— 角球弧的圆心就在这四个点上。
+
+        单独开一个方法是因为"球是不是在角球弧内"必须知道圆心在哪,
+        而调用方不该自己去 landmarks() 里按名字挑。
+        """
+        table = self.landmarks()
+        return {name: table[name] for name in CORNER_NAMES}
+
+    def penalty_spot(self, side: str) -> Point:
+        """某一侧的罚球点（点球就是从这里踢的）。"""
+        return self.landmark(f"penalty_spot_{side}")
+
     def landmarks(self) -> Dict[str, Point]:
         """具名关键点表 —— 人工标定时的"公共词汇表"。
 
@@ -153,6 +176,20 @@ class PitchSpec:
             table[f"goal_area_{side}_top"] = (goal_zone_x, self.goal_area_y_min)
             table[f"goal_area_{side}_bottom"] = (goal_zone_x, self.goal_area_y_max)
             table[f"penalty_spot_{side}"] = (spot_x, centre_y)
+        # 角球弧: 圆心就是角点, 半径 corner_arc_radius（IFAB 1 米）。
+        # 除了角点本身, 把弧与两条边线的交点也列出来 —— 它们在画面里是能肉眼
+        # 定位的实线端点, 而角点常常被摄像机切出画面外。
+        radius = self.corner_arc_radius
+        table.update({
+            "corner_arc_top_left_goal_line": (radius, 0.0),
+            "corner_arc_top_left_touchline": (0.0, radius),
+            "corner_arc_top_right_goal_line": (length - radius, 0.0),
+            "corner_arc_top_right_touchline": (length, radius),
+            "corner_arc_bottom_left_goal_line": (radius, width),
+            "corner_arc_bottom_left_touchline": (0.0, width - radius),
+            "corner_arc_bottom_right_goal_line": (length - radius, width),
+            "corner_arc_bottom_right_touchline": (length, width - radius),
+        })
         return table
 
     # ---------------------------------------------------------------- 配置

@@ -21,6 +21,11 @@
 
 ★ 样式可调: ``configs/runtime/infer_pipeline.yaml`` 的 ``visualization.style``
   会经 ``DrawStyle.from_image_size(h, w, **overrides)`` 覆盖到这里的默认值。
+
+★ 除了检测框, 本模块也负责**姿态骨骼的绘制**（:meth:`BeautifyVisualizer.draw_skeleton`）:
+  它是姿态子系统（``od_platform.pose``）结果能被看见的那一环。骨骼连线定义在
+  :data:`SKELETON_EDGES`, 关键点坐标经 :func:`keypoint_pixel` 取 ——
+  不可用的关键点一律跳过, 不会画出横穿画面的假肢体。
 """
 from __future__ import annotations
 
@@ -34,6 +39,32 @@ FONT_HERSHEY_SIMPLEX = 0
 
 # 分辨率自适应的基准: 以 720p 为 1.0 倍, 4K 上字号/线宽自动放大
 STYLE_BASE_HEIGHT = 720
+
+# COCO-17 的骨骼连线（画"火柴人"用）。
+# ★ 这里刻意【不 import od_platform.pose】: 关键点的名字约定由姿态模块定义,
+#   但"怎么画"是绘制模块的职责。两边共用同一套 COCO 关键点名, 靠的是命名约定
+#   与测试来对齐, 而不是 import —— 否则 visualization 会反向依赖 pose 子系统,
+#   本模块"能被轻量引用"的性质就没了。
+SKELETON_EDGES: Tuple[Tuple[str, str], ...] = (
+    ("left_shoulder", "right_shoulder"),
+    ("left_shoulder", "left_elbow"),
+    ("left_elbow", "left_wrist"),
+    ("right_shoulder", "right_elbow"),
+    ("right_elbow", "right_wrist"),
+    ("left_shoulder", "left_hip"),
+    ("right_shoulder", "right_hip"),
+    ("left_hip", "right_hip"),
+    ("left_hip", "left_knee"),
+    ("left_knee", "left_ankle"),
+    ("right_hip", "right_knee"),
+    ("right_knee", "right_ankle"),
+    ("nose", "left_shoulder"),
+    ("nose", "right_shoulder"),
+    ("nose", "left_eye"),
+    ("nose", "right_eye"),
+    ("left_eye", "left_ear"),
+    ("right_eye", "right_ear"),
+)
 
 
 @dataclass
@@ -53,6 +84,11 @@ class DrawStyle:
     min_box_pixels: int = 2          # 短边小于此值的框不画（噪声框）
     show_confidence: bool = True
     conf_decimals: int = 2
+    # ↓ 姿态（骨骼）绘制
+    skeleton_thickness: int = 2
+    keypoint_radius: int = 3
+    keypoint_color: Tuple[int, int, int] = (255, 255, 255)
+    draw_skeleton_box: bool = False   # 是否同时画人体框（默认只画骨骼, 免得画面太花）
 
     @classmethod
     def from_image_size(cls, h: int, w: int, **overrides) -> "DrawStyle":
@@ -69,10 +105,30 @@ class DrawStyle:
             style.text_scale = round(style.text_scale * factor, 3)
             style.text_pad_x = max(1, round(style.text_pad_x * factor))
             style.text_pad_y = max(1, round(style.text_pad_y * factor))
+            style.skeleton_thickness = max(1, round(style.skeleton_thickness * factor))
+            style.keypoint_radius = max(1, round(style.keypoint_radius * factor))
         for key, value in overrides.items():
             if hasattr(style, key):
                 setattr(style, key, value)
         return style
+
+
+def keypoint_pixel(keypoints: Dict[str, Any], name: str) -> Optional[Tuple[int, int]]:
+    """取一个关键点的像素坐标; 缺失 / 不可用 / 值非法时返回 None。
+
+    ``available`` 是姿态子系统的约定: 置信度不足的关键点会被标成不可用。
+    本函数把它当硬约束 —— 不可用就当没有, **绝不退化成 (0, 0)**。
+    属性不存在时按"可用"处理, 这样轻量替身也能直接用。
+    """
+    keypoint = keypoints.get(name)
+    if keypoint is None:
+        return None
+    if not getattr(keypoint, "available", True):
+        return None
+    try:
+        return (int(round(float(keypoint.x))), int(round(float(keypoint.y))))
+    except (AttributeError, TypeError, ValueError):
+        return None
 
 
 class BeautifyVisualizer:
@@ -217,4 +273,57 @@ class BeautifyVisualizer:
                 cv2.putText(image, text, (x + style.text_pad_x, max(style.text_pad_y, y - style.text_pad_y)),
                             style.font, style.text_scale, style.text_color,
                             style.text_thickness, cv2.LINE_AA)
+        return image
+
+    # ---------------------------------------------------------------- 姿态
+    def draw_skeleton(self, image, poses, style: Optional[DrawStyle] = None,
+                      *, color=None):
+        """画骨骼连线（姿态估计结果的呈现）。**原地修改并返回同一个数组**。
+
+        Args:
+            image: BGR 图像
+            poses: 一组姿态对象。本函数只依赖**鸭子类型** —— 每个元素要有
+                ``keypoints``（``{关键点名: 带 x / y / conf / available 的对象}``）
+                与可选的 ``bbox``。这样 visualization 不必 import 姿态子系统,
+                测试也能用轻量替身。
+            style: 绘制样式; None 时用默认（不按图尺寸自适应）
+            color: 骨骼颜色; None 时用 ``default_color``
+
+        Returns:
+            画好的图像（与传入的是同一个对象）
+
+        ★ 一条硬规矩: **关键点不可用时既不画点、也不画连到它的线**。
+          拿 0 坐标去画会得到一条横穿画面的假肢体 —— 那比不画更糟。
+        """
+        import cv2
+
+        style = style or DrawStyle()
+        if image is None or not poses:
+            return image
+        bone_color = tuple(color) if color else tuple(self.default_color)
+
+        for pose in poses:
+            keypoints = getattr(pose, "keypoints", None) or {}
+
+            if style.draw_skeleton_box:
+                bbox = getattr(pose, "bbox", None)
+                if bbox is not None and len(bbox) == 4:
+                    x1, y1, x2, y2 = (int(round(float(value))) for value in bbox)
+                    cv2.rectangle(image, (x1, y1), (x2, y2), bone_color,
+                                  style.box_thickness)
+
+            for start_name, end_name in SKELETON_EDGES:
+                start = keypoint_pixel(keypoints, start_name)
+                end = keypoint_pixel(keypoints, end_name)
+                if start is None or end is None:
+                    continue                      # 缺一个端点就整条不画
+                cv2.line(image, start, end, bone_color,
+                         style.skeleton_thickness, cv2.LINE_AA)
+
+            for name in keypoints:
+                point = keypoint_pixel(keypoints, name)
+                if point is None:
+                    continue
+                cv2.circle(image, point, style.keypoint_radius,
+                           tuple(style.keypoint_color), -1)
         return image

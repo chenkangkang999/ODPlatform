@@ -11,7 +11,12 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
-from od_platform.visualization import BeautifyVisualizer, DrawStyle
+from od_platform.visualization import (
+    SKELETON_EDGES,
+    BeautifyVisualizer,
+    DrawStyle,
+    keypoint_pixel,
+)
 
 BOX_COLOR = (0, 0, 255)          # BGR 红
 DEFAULT_COLOR = (0, 255, 0)      # BGR 绿
@@ -195,3 +200,121 @@ def test_style_ignores_unknown_override_keys():
 def test_style_handles_degenerate_sizes(size):
     style = DrawStyle.from_image_size(*size)
     assert style.box_thickness >= 1
+
+
+# ---------------------------------------------------------------- 姿态骨骼绘制
+# 姿态子系统（od_platform.pose）的结果要靠这里才能被看见。
+
+class _Keypoint:
+    """姿态模块 Keypoint 的轻量替身（本模块只依赖鸭子类型）。"""
+
+    def __init__(self, x, y, conf=0.9, available=True):
+        self.x, self.y, self.conf, self.available = x, y, conf, available
+
+
+class _Pose:
+    def __init__(self, keypoints, bbox=(10.0, 10.0, 100.0, 130.0)):
+        self.keypoints = keypoints
+        self.bbox = bbox
+
+
+BODY_COORDS = {
+    "nose": (60, 20), "left_eye": (57, 17), "right_eye": (63, 17),
+    "left_ear": (54, 18), "right_ear": (66, 18),
+    "left_shoulder": (50, 35), "right_shoulder": (70, 35),
+    "left_elbow": (45, 55), "right_elbow": (75, 55),
+    "left_wrist": (42, 75), "right_wrist": (78, 75),
+    "left_hip": (52, 70), "right_hip": (68, 70),
+    "left_knee": (50, 95), "right_knee": (70, 95),
+    "left_ankle": (48, 118), "right_ankle": (72, 118),
+}
+
+
+def _body(**unavailable):
+    """造一个完整人体; 传入 ``name=False`` 可把某个关键点标成不可用。"""
+    keypoints = {}
+    for name, (x, y) in BODY_COORDS.items():
+        usable = unavailable.get(name, True)
+        keypoints[name] = _Keypoint(x, y, available=usable)
+    return _Pose(keypoints)
+
+
+def test_skeleton_edges_only_use_coco_keypoint_names():
+    """★ 跨模块一致性: 骨骼连线的名字必须都在姿态模块的 COCO-17 里, 否则永远画不出来。
+
+    两个模块刻意不互相 import（visualization 要保持轻量）, 所以这条由测试来守。
+    """
+    from od_platform.pose import COCO_KEYPOINT_NAMES
+
+    used = {name for edge in SKELETON_EDGES for name in edge}
+    missing = used - set(COCO_KEYPOINT_NAMES)
+    assert not missing, f"这些名字不在 COCO-17 里: {missing}"
+
+
+def test_draw_skeleton_actually_draws_and_reuses_the_array():
+    image = blank(150, 120)
+    before = image.copy()
+    result = BeautifyVisualizer().draw_skeleton(image, [_body()], style=DrawStyle())
+    assert result is image
+    assert not np.array_equal(before, image)
+
+
+def test_draw_skeleton_uses_the_configured_colors():
+    image = blank(150, 120)
+    style = DrawStyle(skeleton_thickness=3, keypoint_radius=2,
+                      keypoint_color=(0, 255, 255))
+    BeautifyVisualizer(default_color=(0, 0, 255)).draw_skeleton(image, [_body()],
+                                                                style=style)
+    assert color_present(image[30:45, 45:75], (0, 0, 255))     # 骨骼用 default_color
+    assert color_present(image[15:25, 55:65], (0, 255, 255))   # 关节点用 keypoint_color
+
+
+def test_unavailable_keypoints_are_never_drawn():
+    """★ 硬规矩: 不可用的关键点既不画点, 也不画连到它的线。
+
+    拿 0 坐标去画会得到一条横穿画面的假肢体 —— 那比不画更糟。
+    """
+    kept = ("left_hip", "right_hip", "left_shoulder", "right_shoulder")
+    pose = _Pose({name: _Keypoint(*BODY_COORDS[name], available=(name in kept))
+                  for name in BODY_COORDS})
+    image = blank(150, 120)
+    before = image.copy()
+    BeautifyVisualizer(default_color=BOX_COLOR).draw_skeleton(image, [pose],
+                                                              style=DrawStyle())
+    assert not np.array_equal(before, image)            # 躯干那几条线还在
+    # 左踝 (48, 118) 不可用 → 它所在的下肢区域一条线都不该出现
+    assert not color_present(image[100:125, 40:58], BOX_COLOR)
+
+
+def test_keypoint_pixel_rejects_missing_unavailable_and_invalid():
+    assert keypoint_pixel({}, "nose") is None
+    assert keypoint_pixel({"nose": _Keypoint(1, 2, available=False)}, "nose") is None
+    assert keypoint_pixel({"nose": _Keypoint("x", 2)}, "nose") is None
+    assert keypoint_pixel({"nose": _Keypoint(3.4, 5.6)}, "nose") == (3, 6)
+
+
+def test_draw_skeleton_box_is_opt_in():
+    without = blank(150, 120)
+    BeautifyVisualizer().draw_skeleton(without, [_body()], style=DrawStyle())
+
+    with_box = blank(150, 120)
+    BeautifyVisualizer().draw_skeleton(
+        with_box, [_body()],
+        style=DrawStyle(draw_skeleton_box=True, box_thickness=4))
+    # 开了人体框之后, 框的角落附近会多出颜色
+    assert not np.array_equal(without, with_box)
+    assert color_present(with_box[8:16, 8:16], DEFAULT_COLOR)
+
+
+def test_draw_skeleton_on_empty_input_is_a_no_op():
+    image = blank()
+    before = image.copy()
+    assert BeautifyVisualizer().draw_skeleton(image, [], style=DrawStyle()) is image
+    assert BeautifyVisualizer().draw_skeleton(None, [_body()], style=DrawStyle()) is None
+    assert np.array_equal(before, image)
+
+
+def test_skeleton_style_scales_with_image_size():
+    big = DrawStyle.from_image_size(2160, 3840).skeleton_thickness
+    small = DrawStyle.from_image_size(720, 1280).skeleton_thickness
+    assert big >= small >= 1

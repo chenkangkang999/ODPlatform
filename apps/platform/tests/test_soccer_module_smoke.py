@@ -1,6 +1,4 @@
 """Catch import failures and elementary geometry errors without model downloads."""
-import pytest
-
 from od_platform.action_recognition import ActionRecognizer
 from od_platform.geometric import FieldHomography, PitchCalibration, RuleEngine, RuleSettings
 from od_platform.tracking import MultiObjectTracker
@@ -15,26 +13,20 @@ def engine(settings=None):
 
 
 def test_geometry_module_imports_and_uses_configured_thresholds():
-    value = engine(RuleSettings(offside_margin_m=0.5, collision_distance_m=1.5))
-    assert value.settings.offside_margin_m == 0.5
+    value = engine(RuleSettings(penalty_spot_tolerance_m=0.5, collision_distance_m=1.5))
+    assert value.settings.penalty_spot_tolerance_m == 0.5
     assert value.settings.collision_distance_m == 1.5
 
 
-@pytest.mark.parametrize("direction,defenders,attackers,ball,expected", [
-    ("right", [(10, 0), (30, 0), (70, 0), (90, 0)], [(50, 0), (80, 0)], (60, 0), [1]),
-    ("left", [(10, 0), (30, 0), (70, 0), (90, 0)], [(20, 0), (50, 0)], (40, 0), [0]),
-])
-def test_offside_candidates_use_second_opponent_from_target_goal(direction, defenders, attackers, ball, expected):
-    candidates = engine().check_offside(attackers, defenders, ball, direction)
-    assert [candidate["player_idx"] for candidate in candidates] == expected
+def test_set_piece_rules_emit_candidates_on_a_calibrated_pitch():
+    """定位球判据（本次新增）在真标定下要能产出候选 —— 角球弧与罚球点各测一个。"""
+    value = engine()
+    corner = value.check_corner_kick((0.5, 0.5))              # 左上角球弧内
+    assert corner is not None and corner["set_piece"] == "corner_kick"
+    assert value.check_corner_kick((52.5, 34.0)) is None      # 中圈不是角球
 
-
-def test_inferred_second_opponent_is_marked_as_needing_evidence():
-    candidates = engine().check_offside([(100, 0)], [(20, 0)], (0, 0))
-    assert len(candidates) == 1
-    assert candidates[0]["second_last_inferred"] is True
-    assert candidates[0]["decision_status"] == "needs_evidence"
-    assert "kick_moment" in candidates[0]["requires_evidence"]
+    spot = value.check_penalty_kick((11.0, 34.0))              # 左侧罚球点
+    assert spot is not None and spot["side"] == "left"
 
 
 def test_unloaded_action_model_is_not_ready_and_returns_no_actions():

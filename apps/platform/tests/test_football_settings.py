@@ -218,7 +218,7 @@ def test_videomae_v2_label_still_dispatches_to_the_implemented_family():
 
 @pytest.mark.parametrize("name", PLANNED_FAMILIES)
 def test_planned_families_are_explicitly_not_implemented(name):
-    """slowfast / custom 是预留位: 必须在代码层面表现为"未实现", 不能假装支持。"""
+    """PLANNED_FAMILIES 里的预留位必须在代码层面表现为"未实现", 不能假装支持。"""
     settings = ActionRecognitionSettings.from_config(
         {"action_recognition": {"model_name": name, "checkpoint": "whatever"}})
     assert settings.family == "" and settings.implemented is False

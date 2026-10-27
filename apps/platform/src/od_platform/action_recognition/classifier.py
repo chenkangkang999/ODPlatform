@@ -13,7 +13,8 @@
   **VideoMAE V1 base + Kinetics-400**。真实类别数由模型自己报告, 不写死在配置里
   （此前配置写的 ``num_classes: 10`` 与真实的 400 类对不上）。
 
-★ ``slowfast`` 没有实现: 只会降级为空结果并打 warning。详见 settings 模块。
+★ ``custom`` 是预留位、``slowfast`` 已按需求清单删除: 两者都不会被加载,
+  传进来只会降级为空结果并打 warning。详见 settings 模块。
 
 用法::
 

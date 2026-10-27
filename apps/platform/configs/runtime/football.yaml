@@ -28,6 +28,7 @@ pitch:
   goal_area_width: 18.32
   penalty_spot_distance: 11.0
   centre_circle_radius: 9.15
+  corner_arc_radius: 1.0       # 角球弧半径（IFAB）; 判定"球是否摆在角球弧内"用
   # 非标准场地（青训 / 五人制）在这里覆盖即可, 全链路跟着变。
 
 # ---------- 标定质量门槛与求解参数 ----------
@@ -46,7 +47,7 @@ calibration:
 # 这里【不再】放"整幅画面四角 ↔ 球场四角"的假标定。那等于假设照片恰好完整
 # 框住球场且没有透视, 会让所有以米为单位的结论失真, 而能力标志却报告"已标定"。
 #
-# 标定必须来自下面三者之一, 否则几何事件（越位/出界/进球/接触）一律不产出:
+# 标定必须来自下面三者之一, 否则几何事件（接触/出界/角球/点球/任意球）一律不产出:
 #   1) 素材旁边的同名 sidecar: <素材名>.calibration.json
 #   2) 素材同目录的 calibration.json
 #   3) configs/runtime/calibrations/<素材名>.json
@@ -67,28 +68,41 @@ homography:
   # image_size: [1920, 1080]
 
 # ---------- 地图规则阈值 ----------
+# ★ 变更: offside_margin_m / attacking_direction / attacking_team 已随【越位】规则一并
+#   移除（新需求清单里没有越位, 留着就是一条死规则的专属配置）。
+#   新增的是【定位球】判据: 角球(球在角球弧) / 点球(球在罚球点) / 任意球(球静止+
+#   对手退够 9.15 米)。这三项是纯几何的, 不依赖任何模型, 因此不需要重新训练就能生效。
 rules:
-  offside_margin_m: 0.0             # 越位容差（米）; 标定误差大时可放宽
   collision_distance_m: 2.0         # 接触候选的距离阈值（米）
   ball_assignment_tolerance_m: 0.5  # 用"谁离球最近"估计球归属的距离（米）
   ball_radius_m: 0.11               # 5 号球半径（米）
   goal_line_tolerance_m: null       # 门线容差; null = 取 ball_radius_m
-  attacking_direction: auto         # auto | left | right
-  attacking_team: auto              # auto | A | B（auto = 离球最近的队）
   goal_defending_team: null         # 该端球门的防守方; null 时出界只能报 unknown
 
+  # ---- 定位球几何 ----
+  corner_arc_tolerance_m: 0.5       # 球离最近角点多远仍算"摆在角球弧内"
+  penalty_spot_tolerance_m: 1.0     # 球离罚球点多远仍算"摆在罚球点上"
+  free_kick_wall_distance_m: 9.15   # IFAB Law 13: 防守方须退到 9.15 米
+  wall_distance_tolerance_m: 0.5    # 人墙距离的容差（判"是否已退够"）
+
+  # ---- "球静止"判定（任意球/点球的前置条件）----
+  # 不能只看单帧速度: 标定抖动会让静止的球也算出速度。这里看窗口内的最大位移。
+  ball_stationary_window_frames: 15
+  ball_stationary_min_samples: 5
+  ball_stationary_max_displacement_m: 0.5
+
 # ---------- 分析器时序参数 ----------
+# 注: 原来的 min_direction_delta_m（推断进攻方向）已随越位规则移除。
 analyzer:
   event_cooldown_frames: 30         # 同类事件在该帧数内只报一次
   possession_memory_frames: 15      # 球归属结论保留多少帧
-  min_direction_delta_m: 1.0        # 推断进攻方向时球至少偏离多少米
 
 # ---------- 跟踪层（几何层内部使用的跟踪器）----------
 # ★ 注意: 这里配置的【不是】对外产出 track_id 的那个跟踪器。
 #   · 对外（frames.jsonl 的 track_id、annotated.png 上画的 ID）用的是
 #     ultralytics 的 BoT-SORT, 参数在 configs/runtime/botsort.yaml（由
 #     detection.tracker 指向）。
-#   · 本节配置的是几何层内部的 MultiObjectTracker, 只服务越位/接触/球归属的
+#   · 本节配置的是几何层内部的 MultiObjectTracker, 只服务接触/球归属/球静止的
 #     时序判断, 不对外暴露 ID。
 tracking:
   backend: botsort                  # botsort | bytetrack（两者共用两阶段关联实现）
@@ -138,15 +152,23 @@ detection:
   # 否则把名字交给 ultralytics, 用它自带的 cfg/trackers/<名字>。
   tracker: botsort.yaml
   classes: [0, 1]                   # 0=player, 1=football（注意 COCO 编码里是反的）
+  # ↑ 这个列表是【推理时保留哪些类】的过滤器, 不是"模型能检什么"。
+  #   红牌/黄牌/换人牌要真正生效, 需要一个用这些类别**训练过**的模型, 并在
+  #   configs/runtime/events.yaml 里把类名映射对上
+  #   （本仓库现有权重只有 player/football, 检不出牌）。
   model: models/trained/football_yolo/weights/best.pt   # 说明性; 实际由 Web 侧 FOOTBALL_MODEL_PATH 决定
 
 # ---------- 动作识别（真正生效: ActionRecognitionSettings）----------
 # ★ 能力边界（如实记录, 别当成已支持）:
 #   · 实际加载 videomae-base-finetuned-kinetics = VideoMAE V1 base + Kinetics-400（400 类）;
 #   · model_name 只是分派键, 加载哪个模型由 checkpoint 决定;
-#   · slowfast 未实现 —— 传进来只会降级为空结果。
+#   · custom 未实现 —— 传进来只会降级为空结果;
+#   · **slowfast 已删除**（代码里从未实现过, 且与 videomae 职责完全重叠）;
+#   · Kinetics-400 里没有"假摔/肘击"这类足球犯规 → 要识别本项目的目标动作,
+#     必须用自己的足球视频**微调**。姿态型动作（铲球/高抬腿）已由 pose 子系统
+#     用骨骼几何判定, 不依赖这个分类器。
 action_recognition:
-  model_name: videomae              # 分派键; 已实现 videomae; slowfast/custom 仅预留
+  model_name: videomae              # 分派键; 已实现 videomae; custom 仅预留
   checkpoint: models/pretrained/videomae-base-kinetics
   clip_length: 16                   # 送入模型的帧数
   confidence_threshold: 0.3         # 低于此值不产出动作事件

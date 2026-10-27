@@ -10,7 +10,7 @@
 
 历史版本用"整幅画面的四个角 ↔ 球场四个角"去构造 FieldHomography, 那等于
 假设"这张照片恰好完整框住了球场且没有透视"。转播机位显然不是这样, 于是
-所有以米为单位的结论（球员间距、出界、越位线）全部失真, 而 capabilities
+所有以米为单位的结论（球员间距、出界、定位球）全部失真, 而 capabilities
 却报告 calibrated_pitch=True —— 这是本项目最危险的一处"看起来对"。
 
 现在: 没有真标定就是没有。上层（analyzer）必须据此拒绝输出几何事件,
@@ -155,6 +155,58 @@ class FieldHomography:
     def in_goal_mouth(self, y: float, *, tolerance: float = 0.0) -> bool:
         """球的 y 是否落在两根门柱之间。"""
         return self.pitch.goal_y_min - tolerance <= y <= self.pitch.goal_y_max + tolerance
+
+    # ---------------------------------------------------------------- 定位球几何
+    # 角球 / 点球 / 任意球都是"球被摆在一个特定位置上"的场景事件, 判据是纯几何的。
+
+    def nearest_corner(self, x: float, y: float) -> Tuple[str, float]:
+        """离该点最近的角点及其距离（米）。
+
+        角球弧的圆心就是角点, 所以"离最近角点的距离 ≤ 角球弧半径"即"球在角球弧内"。
+        """
+        best_name, best_distance = "", float("inf")
+        for name, (cx, cy) in self.pitch.corner_points().items():
+            distance = self.distance_m((x, y), (cx, cy))
+            if distance < best_distance:
+                best_name, best_distance = name, distance
+        return best_name, best_distance
+
+    def corner_arc_status(self, x: float, y: float, *,
+                          tolerance: float = 0.0) -> Dict[str, Any]:
+        """点是否落在某个角球弧内, 以及判据的全部中间量。
+
+        返回 `inside` / 最近的角点名 / 距离 / 弧半径 —— 把判断依据一并交出去,
+        上层才能解释"为什么判它是角球", 而不是只得到一个布尔。
+        """
+        name, distance = self.nearest_corner(x, y)
+        radius = self.pitch.corner_arc_radius
+        return {
+            "corner": name,
+            "distance_m": round(distance, 3),
+            "arc_radius_m": radius,
+            "tolerance_m": tolerance,
+            "inside": bool(distance <= radius + tolerance),
+        }
+
+    def penalty_spot_status(self, x: float, y: float, side: str, *,
+                            tolerance: float = 0.0) -> Dict[str, Any]:
+        """点是否落在某一侧的罚球点上（球摆上罚球点 = 准备踢点球）。"""
+        spot = self.pitch.penalty_spot(side)
+        distance = self.distance_m((x, y), spot)
+        return {
+            "side": side,
+            "spot_m": (round(spot[0], 3), round(spot[1], 3)),
+            "distance_m": round(distance, 3),
+            "tolerance_m": tolerance,
+            "on_spot": bool(distance <= tolerance),
+        }
+
+    def min_distance_to(self, point: Point, others: Sequence[Point]) -> Optional[float]:
+        """点到一组点的最小距离（米）; 组为空时返回 None 而不是 inf ——
+        "没有对手"与"对手无限远"是两件不同的事, 上层要能区分。"""
+        if not others:
+            return None
+        return min(self.distance_m(point, other) for other in others)
 
     # ---------------------------------------------------------------- 门线
 

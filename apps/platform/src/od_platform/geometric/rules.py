@@ -1,25 +1,34 @@
 #!/usr/bin/env python
 # -*- coding:utf-8 -*-
-"""规则引擎 —— 越位 / 接触 / 出界 / 进球的【候选】判定。
+"""规则引擎 —— 接触 / 出界 / 定位球（角球 / 点球 / 任意球）的【候选】判定。
+
+★ 需求变更说明（本次）
+
+    按新的需求清单, **越位与进球已移出范围** —— 原先的 check_offside / check_goal
+    连同它们的"必需证据"常量一并删除。清单里的"角球"由两部分覆盖:
+
+        · check_ball_out   → 球越过门线且最后触球方是该端防守方 = **该判角球**（判罚侧）
+        · check_corner_kick → 球摆进了角球弧 = **正在踢角球**（执行侧）
+
+    两者刻意分成两个函数、两个事件, 不互相包含: 判罚之后球还没摆好、或摆好了而出界
+    已被前一帧报过, 都是常见情形。
+
+    "任意球 / 点球"是本次新增的纯几何判据（球静止 + 对手退到 9.15 米 / 球摆在罚球点）,
+    不依赖任何模型, 因此不需要重新训练就能工作。
 
 ★ 三个必须说清楚的口径（也是本项目答辩时的护身符）:
 
-    1. 本引擎产出的是【候选】, 不是判罚。足球规则里"越位位置"不等于"越位犯规",
-       "球员靠得近"不等于"冲撞犯规", "球过线"不等于"进球有效"。每一条候选都带
+    1. 本引擎产出的是【候选】, 不是判罚。"球员靠得近"不等于"冲撞犯规",
+       "球摆在罚球点上"也不等于"裁判吹了点球"。每一条候选都带
        decision_status / requires_evidence, 由人工复核台定性。
     2. 所有距离/坐标都是【米】, 前提是 homography 有真实标定。未标定时本引擎
        拒绝产出任何结果（返回空 + skip_reason），而不是拿像素当米糊弄。
     3. 阈值全部来自 RuleSettings（geometric/settings.py）, 场地尺寸来自 PitchSpec,
        本文件里不出现任何字面量。
 
-历史版本的三处硬伤（本次修正）:
-    · ball_crossed_goal_line(x, goal_y_min, goal_y_max) 把后两个参数丢掉,
-      只判断 x<0/x>105 —— "离球门 30 米的边线球"也会被判过门线。已移到
-      FieldHomography 并修正为"越线 且 在门框内"。
+历史版本修正过的一处硬伤（保留记录）:
     · check_ball_out 不看最后触球方 —— 而这是角球/球门球的唯一判据。
       现在要求 last_touch_team, 缺它就返回 unknown 而不是猜。
-    · check_offside 写了却从未被调用。现在由 geometric.analyzer 调用,
-      并且把"触球时刻未知"显式标成 needs_evidence。
 """
 from __future__ import annotations
 
@@ -35,10 +44,11 @@ logger = logging.getLogger(__name__)
 Point = Tuple[float, float]
 
 # 每条候选都必须挂上"还缺什么证据" —— 这是本项目与"AI 直接给判罚"的分界线。
-# 它们不是阈值, 而是规则语义的一部分（IFAB Law 11 / 12 / 10 的要求）。
-OFFSIDE_REQUIRED_EVIDENCE = ("kick_moment", "active_involvement", "legal_body_part")
+# 它们不是阈值, 而是规则语义的一部分（IFAB Law 12 / 13 / 14 / 17 的要求）。
 BALL_OUT_REQUIRED_EVIDENCE = ("last_touch_team",)
-GOAL_REQUIRED_EVIDENCE = ("whole_ball_over_line", "no_offence_before_goal")
+CORNER_KICK_REQUIRED_EVIDENCE = ("restart_awarded_by_referee",)
+PENALTY_KICK_REQUIRED_EVIDENCE = ("referee_award", "offence_type")
+FREE_KICK_REQUIRED_EVIDENCE = ("referee_whistle", "offence_type")
 
 DECISION_PENDING = "pending_human_review"
 DECISION_NEEDS_EVIDENCE = "needs_evidence"
@@ -66,77 +76,8 @@ class RuleEngine:
         self.skip_reason: Optional[str] = None
         if not self.usable:
             self.skip_reason = "未提供球场标定（homography.calibrated=False），几何规则拒绝产出"
-            logger.warning("%s —— 结果里不会出现 collision/ball_out/offside/goal 候选",
-                           self.skip_reason)
-
-    # ------------------------------------------------------------------ 越位
-
-    def check_offside(
-        self,
-        attacking_players: Sequence[Point],
-        defending_players: Sequence[Point],
-        ball_pos: Point,
-        attacking_direction: str = "right",
-        *,
-        kick_frame: Optional[int] = None,
-    ) -> List[Dict[str, Any]]:
-        """越位【位置】候选（IFAB Law 11 的几何部分）。
-
-        判据: 进攻球员在对方半场, 且比【球】和【倒数第二名防守球员】都更靠近对方球门线。
-        注意手臂不计入合法部位, 而检测框是整个人 —— 所以框中心会高估, 需人工核对。
-
-        Args:
-            attacking_players: 进攻方球员的球场坐标（米）
-            defending_players: 防守方球员的球场坐标（米）
-            ball_pos: 球的球场坐标（米）
-            attacking_direction: "right" 表示进攻方向朝球场右端
-            kick_frame: 队友触球的帧号; 为 None 时标记为 needs_evidence
-        """
-        if not self.usable or not defending_players or not attacking_players:
-            return []
-
-        sign = 1.0 if attacking_direction == "right" else -1.0
-        attack_goal_x = (self.pitch.right_goal_line_x if attacking_direction == "right"
-                         else self.pitch.left_goal_line_x)
-        own_half_boundary = self.pitch.centre_x
-
-        # 倒数第二名防守球员 = 离本方球门线第二近的那一个（第一近的通常是门将）
-        defenders_sorted = sorted(defending_players, key=lambda p: abs(p[0] - attack_goal_x))
-        if len(defenders_sorted) >= 2:
-            second_last, second_last_inferred = defenders_sorted[1], False
-        else:
-            second_last, second_last_inferred = defenders_sorted[0], True
-
-        # 越位线: 取"球"与"倒数第二防守球员"中更靠近球门的那条。
-        # 距离是"到球门线的距离", 所以要沿场地往回退, 不是往球门外面推。
-        offside_line_x = attack_goal_x - sign * min(
-            abs(attack_goal_x - second_last[0]), abs(attack_goal_x - ball_pos[0]))
-
-        margin = self.settings.offside_margin_m
-        candidates: List[Dict[str, Any]] = []
-        for index, (ax, ay) in enumerate(attacking_players):
-            if (ax - own_half_boundary) * sign <= 0:      # 还在本方半场: 不可能越位
-                continue
-            beyond_defender = (ax - second_last[0]) * sign > margin
-            beyond_ball = (ax - ball_pos[0]) * sign > margin
-            if beyond_defender and beyond_ball:
-                candidates.append({
-                    "player_idx": index,
-                    "pos": (round(ax, 3), round(ay, 3)),
-                    "offside_line_x": round(offside_line_x, 3),
-                    "second_last_defender": (round(second_last[0], 3),
-                                             round(second_last[1], 3)),
-                    "ball_pos": (round(ball_pos[0], 3), round(ball_pos[1], 3)),
-                    "attacking_direction": attacking_direction,
-                    "offside_margin_m": margin,
-                    "kick_frame": kick_frame,
-                    "second_last_inferred": second_last_inferred,
-                    "decision_status": (DECISION_PENDING if kick_frame is not None
-                                        else DECISION_NEEDS_EVIDENCE),
-                    "requires_evidence": list(OFFSIDE_REQUIRED_EVIDENCE),
-                    "note": "越位位置不等于越位犯规; 需在触球时刻判断是否参与实际比赛",
-                })
-        return candidates
+            logger.warning("%s —— 结果里不会出现 collision / ball_out / corner_kick / "
+                           "penalty_kick / free_kick 候选", self.skip_reason)
 
     # ------------------------------------------------------------------ 接触
 
@@ -179,7 +120,7 @@ class RuleEngine:
         判据（IFAB Law 15/16/17）:
             越过边线            → 掷界外球, 判给【未最后触球】的一方
             越过门线且在门框外  → 最后触球方是进攻方 → 球门球; 是防守方 → 角球
-            越过门线且在门框内  → 这是进球, 交给 check_goal（本函数不重复报）
+            越过门线且在门框内  → 这是进球; 进球不在本次需求清单内, 故不产出
 
         Args:
             last_touch_team: 最后触球的队伍标识（如 "A"/"B"）; 未知时返回 unknown
@@ -195,7 +136,9 @@ class RuleEngine:
         if self.homography.in_goal_mouth(y, tolerance=tolerance) and (
                 x < self.pitch.left_goal_line_x - tolerance
                 or x > self.pitch.right_goal_line_x + tolerance):
-            return None                      # 门框内过线 → 进球, 由 check_goal 负责
+            # 门框内过线 = 进球。进球不在本次需求清单内, 所以不产出事件;
+            # 保留这个分支是为了不把它误报成"球门球 / 角球"。
+            return None
 
         over_endline = (x < -tolerance or x > self.pitch.length + tolerance)
         over_touchline = self.homography.crossed_touchline(y, tolerance=tolerance)
@@ -248,41 +191,102 @@ class RuleEngine:
         })
         return base
 
-    # ------------------------------------------------------------------ 进球
+    # ------------------------------------------------------------------ 定位球
+    # 角球 / 点球 / 任意球: 判据全是纯几何的, 不需要任何模型、也不需要重新训练。
 
-    def check_goal(
-        self,
-        ball_pos: Point,
-        *,
-        last_touch_team: Optional[str] = None,
-        side: Optional[str] = None,
-    ) -> Optional[Dict[str, Any]]:
-        """进球【候选】: 整个球越过门线且在两门柱之间。
+    def check_corner_kick(self, ball_pos: Point) -> Optional[Dict[str, Any]]:
+        """角球【候选】—— 球摆进了角球弧（"正在踢角球"的直接几何证据）。
 
-        仍然只是候选 —— 进球有效还要排除进球方之前的犯规/越位, 而球心越线
-        不等于整个球越线（转播视角更给不出毫米级判定）。
+        ★ 与 check_ball_out 的分工（刻意不合并）:
+
+            · 球越过门线、最后触球方是该端防守方 → 那是一次【判罚】
+              (check_ball_out 的 restart="corner"), 回答"该判角球";
+            · 球摆在角球弧里                    → 这是【正在踢角球】(本函数),
+              回答"角球已经摆好、准备开出"。
+
+          两件事都可能单独发生（判罚了但球还没摆好; 或摆好了而出界已被前一帧报过）,
+          所以是两个函数、两个事件, 互不包含。
         """
         if not self.usable:
             return None
         x, y = ball_pos
-        tolerance = self.settings.effective_goal_line_tolerance_m
-        if side is None:
-            if x < self.pitch.left_goal_line_x - tolerance:
-                side = "left"
-            elif x > self.pitch.right_goal_line_x + tolerance:
-                side = "right"
-            else:
-                return None
-        if not self.homography.ball_crossed_goal_line(x, y, side, tolerance=tolerance):
+        arc = self.homography.corner_arc_status(
+            x, y, tolerance=self.settings.corner_arc_tolerance_m)
+        if not arc["inside"]:
             return None
         return {
-            "side": side,
+            "set_piece": "corner_kick",
+            "side": _corner_side(arc["corner"]),
+            "corner": arc["corner"],
             "ball_pos": (round(x, 3), round(y, 3)),
-            "goal_mouth_y": [self.pitch.goal_y_min, self.pitch.goal_y_max],
-            "scoring_team": (None if last_touch_team is None else last_touch_team),
-            "decision_status": DECISION_NEEDS_EVIDENCE,
-            "requires_evidence": list(GOAL_REQUIRED_EVIDENCE),
-            "note": "球心越线只是候选; 需确认整个球体越线且进球前无犯规",
+            "arc": arc,
+            "decision_status": DECISION_PENDING,
+            "requires_evidence": list(CORNER_KICK_REQUIRED_EVIDENCE),
+            "note": "球在角球弧内 = 正在踢角球; 是否真判了角球需裁判确认",
+        }
+
+    def check_penalty_kick(self, ball_pos: Point, *,
+                           side: Optional[str] = None) -> Optional[Dict[str, Any]]:
+        """点球【候选】—— 球摆在罚球点上。
+
+        判据: 球到某一侧罚球点的距离 ≤ penalty_spot_tolerance_m。
+
+        ★ 为什么不用"球在罚球区内"当判据: 球进罚球区是比赛里最平常的事, 拿它当
+          判据会把大量正常进攻误报成点球。点球是"**球被摆到罚球点**"这个具体事件。
+        """
+        if not self.usable:
+            return None
+        x, y = ball_pos
+        sides = [side] if side in ("left", "right") else ["left", "right"]
+        for candidate in sides:
+            spot = self.homography.penalty_spot_status(
+                x, y, candidate, tolerance=self.settings.penalty_spot_tolerance_m)
+            if not spot["on_spot"]:
+                continue
+            return {
+                "set_piece": "penalty_kick",
+                "side": candidate,
+                "ball_pos": (round(x, 3), round(y, 3)),
+                "spot": spot,
+                "in_penalty_area": self.homography.point_in_penalty_area(x, y, candidate),
+                "decision_status": DECISION_PENDING,
+                "requires_evidence": list(PENALTY_KICK_REQUIRED_EVIDENCE),
+                "note": "球摆在罚球点上 = 准备踢点球; 判罚本身需裁判确认",
+            }
+        return None
+
+    def check_free_kick(self, ball_pos: Point, opponents: Sequence[Point], *,
+                        stationary: Optional[bool] = None) -> Optional[Dict[str, Any]]:
+        """任意球【候选】—— 球静止 **且** 对手已退到 9.15 米外。
+
+        判据（IFAB Law 13）:
+            · 球是静止的 —— 由 geometric/ball_state.py 的 BallStationaryTracker 给出,
+              注意它的"样本不足"是 **None**, 必须与 False 区分开;
+            · 离球最近的对手 ≥ free_kick_wall_distance_m - wall_distance_tolerance_m。
+
+        ★ 两条缺一不可: 只有"球静止"可能是球员在等哨或准备掷界外球; 只有"人墙退开"
+          可能只是正常的防守站位。两者同时成立才是任意球待发的样子。
+        """
+        if not self.usable or stationary is None or not stationary:
+            return None
+        nearest = self.homography.min_distance_to(ball_pos, opponents)
+        if nearest is None:
+            return None                  # 一个对手都没看到 → 证据不足, 不硬判
+        required = (self.settings.free_kick_wall_distance_m
+                    - self.settings.wall_distance_tolerance_m)
+        if nearest < required:
+            return None
+        x, y = ball_pos
+        return {
+            "set_piece": "free_kick",
+            "ball_pos": (round(x, 3), round(y, 3)),
+            "stationary": True,
+            "nearest_opponent_m": round(nearest, 3),
+            "required_wall_distance_m": self.settings.free_kick_wall_distance_m,
+            "effective_required_m": round(required, 3),
+            "decision_status": DECISION_PENDING,
+            "requires_evidence": list(FREE_KICK_REQUIRED_EVIDENCE),
+            "note": "球静止且对手已退够 9.15 米 = 任意球待发; 犯规类型需裁判确认",
         }
 
 
@@ -293,3 +297,11 @@ def _other_team(team: str) -> str:
     if team == "B":
         return "A"
     return team
+
+
+def _corner_side(corner_name: str) -> str:
+    """从角点名取所在端（left / right）; 名字不认识时返回 unknown, 不猜。"""
+    for side in ("left", "right"):
+        if corner_name.endswith(side):
+            return side
+    return "unknown"

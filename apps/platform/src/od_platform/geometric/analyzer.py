@@ -3,7 +3,8 @@
 """几何分析器 —— 把"逐帧检测框"变成"带证据的场上事件候选"。
 
 这是几何层的算法入口: 场上的每一帧进来, 出去的是
-【接触 / 出界 / 进球 / 越位位置】四类候选, 每条都带着证据和"还缺什么"。
+【接触 / 出界 / 角球 / 点球 / 任意球】五类候选, 每条都带着证据和"还缺什么"。
+（越位与进球已按新需求清单移出范围, 连同只为它们服务的配置项一并删除。）
 
 ★★ 最重要的行为约定: 【没有标定就什么都不报】★★
 
@@ -11,7 +12,7 @@
     于是把像素当米用, 输出了一堆看起来合理、实际毫无意义的"米"。
     本版本:
         · 标定必须来自显式来源（配置 / sidecar 文件 / 标定目录）;
-        · 没有标定 → calibrated=False, 四类候选一律不产出, 并在 summary 里说明原因;
+        · 没有标定 → calibrated=False, 五类候选一律不产出, 并在 summary 里说明原因;
         · calibrated_pitch 这个能力标志因此不再撒谎。
 
 ★ 所有可调参数来自 GeometrySettings / TrackingSettings（对应 football.yaml 的
@@ -20,7 +21,8 @@
 
 配套:
     · tracking.MultiObjectTracker  —— 维护跨帧轨迹（接触去重、球归属历史需要它）
-    · geometric.rules.RuleEngine   —— 规则判据（越位 / 出界 / 进球 / 接触）
+    · geometric.rules.RuleEngine   —— 规则判据（接触 / 出界 / 角球 / 点球 / 任意球）
+    · geometric.ball_state         —— "球是否静止"（定位球的前置条件）
     · geometric.calibration        —— 标定及其质量校验
 """
 from __future__ import annotations
@@ -32,6 +34,7 @@ from typing import Any, Dict, List, Mapping, Optional, Sequence, Tuple
 import numpy as np
 
 from od_platform.common.config_utils import read_section
+from od_platform.geometric.ball_state import BallStationaryTracker
 from od_platform.geometric.calibration import (
     CalibrationError, PitchCalibration, default_calibration_dir, discover,
 )
@@ -83,7 +86,8 @@ class PitchAnalyzer:
         self._event_counts: Dict[str, int] = {}
         self._last_touch_team: Optional[str] = None
         self._last_touch_frame = 0
-        self._offside_skip_reason: Optional[str] = None
+        # 定位球的前置条件: 球是否静止（跨帧窗口判定, 见 geometric/ball_state.py）
+        self._ball_state: Optional[BallStationaryTracker] = None
 
         self._raw_config: Mapping[str, Any] = (
             config if config is not None else _load_config_file())
@@ -130,6 +134,7 @@ class PitchAnalyzer:
         self.calibration = calibration
         self.homography = FieldHomography.from_calibration(calibration)
         self.rules = RuleEngine(homography=self.homography, settings=self.settings.rules)
+        self._ball_state = BallStationaryTracker(self.settings.rules)
         # ok 与 calibrated 同义: 只有真标定才算"几何可用"
         self.ok = bool(self.homography.calibrated and self.rules.usable)
         self.calibrated = self.ok
@@ -215,10 +220,15 @@ class PitchAnalyzer:
             elif role == "ball":
                 ball = meter
 
+        # 球静止是定位球（任意球/点球）的前置条件, 每帧喂一次。
+        # 球这一帧没检出来就不喂 —— 窗口会随帧号自然过期, 不会拿旧位置假装还在静止。
+        if ball is not None and self._ball_state is not None:
+            self._ball_state.update(ball, frame_index)
+
         events: List[Dict[str, Any]] = []
-        events += self._offside_events(players, ball, frame_index, timestamp)
         events += self._contact_events(players, frame_index, timestamp)
         events += self._ball_events(players, ball, frame_index, timestamp)
+        events += self._set_piece_events(players, ball, frame_index, timestamp)
         for event in events:
             self._event_counts[event["type"]] = self._event_counts.get(event["type"], 0) + 1
         return events
@@ -238,93 +248,6 @@ class PitchAnalyzer:
             logger.warning("跟踪更新失败（frame %s）: %s", frame_index, exc)
             return {}
         return dict(self._tracker.last_assignment)
-
-    # ------------------------------------------------------------------ 越位
-
-    def _offside_events(self, players, ball, frame_index, timestamp) -> List[Dict[str, Any]]:
-        if self.rules is None or ball is None:
-            return []
-        teams: Dict[str, List[Tuple[Point, Any]]] = {"A": [], "B": []}
-        for position, team, track_id in players:
-            if team in ("A", "B"):
-                teams[team].append((position, track_id))
-        if not teams["A"] or not teams["B"]:
-            self._note_offside_skip(
-                "越位需要球队归属（A/B）, 当前检测结果里没有可用的队伍标签")
-            return []
-
-        rule_settings = self.settings.rules
-        attacking = str(rule_settings.attacking_team).upper()
-        if attacking not in ("A", "B"):
-            attacking = self._team_nearest_to(teams, ball)
-            if attacking is None:
-                return []
-        defending = "B" if attacking == "A" else "A"
-
-        direction = str(rule_settings.attacking_direction).lower()
-        direction_inferred = direction not in ("left", "right")
-        if direction_inferred:
-            direction = self._infer_attacking_direction(
-                teams[attacking], ball,
-                self.settings.analyzer.min_direction_delta_m)
-            if direction is None:
-                self._note_offside_skip(
-                    "进攻方向无法由站位推断（球与该队平均位置几乎重合）, "
-                    "请用 rules.attacking_direction 显式指定")
-                return []
-
-        candidates = self.rules.check_offside(
-            [position for position, _ in teams[attacking]],
-            [position for position, _ in teams[defending]],
-            ball, attacking_direction=direction)
-        events: List[Dict[str, Any]] = []
-        for candidate in candidates:
-            index = candidate["player_idx"]
-            track_id = teams[attacking][index][1]
-            key = ("offside", track_id if track_id is not None else index)
-            if not self._passes_cooldown(key, frame_index):
-                continue
-            events.append({
-                "type": "offside",
-                "frame_index": frame_index,
-                "timestamp": timestamp,
-                "track_id": track_id,
-                "team": attacking,
-                "attacking_direction": direction,
-                "attacking_direction_inferred": direction_inferred,
-                **{k: v for k, v in candidate.items() if k != "player_idx"},
-            })
-        return events
-
-    @staticmethod
-    def _team_nearest_to(teams, ball) -> Optional[str]:
-        """离球最近的队伍视为控球方（进攻方）; 没有球员时返回 None。"""
-        best_team, best_distance = None, float("inf")
-        for team, members in teams.items():
-            for position, _ in members:
-                distance = float(np.hypot(position[0] - ball[0], position[1] - ball[1]))
-                if distance < best_distance:
-                    best_team, best_distance = team, distance
-        return best_team
-
-    @staticmethod
-    def _infer_attacking_direction(members, ball, min_delta_m: float) -> Optional[str]:
-        """球在该队平均位置的那一侧, 就是他们进攻的方向。
-
-        站姿推断天然有歧义, 所以只有当球明显偏离该队平均位置（超过 min_delta_m）
-        时才给结论; 否则返回 None, 由上层记为"证据不足"而不是猜一个方向。
-        """
-        if not members:
-            return None
-        mean_x = float(np.mean([position[0] for position, _ in members]))
-        if abs(ball[0] - mean_x) < min_delta_m:
-            return None
-        return "right" if ball[0] > mean_x else "left"
-
-    def _note_offside_skip(self, reason: str) -> None:
-        if self._offside_skip_reason is None:
-            self._offside_skip_reason = reason
-            logger.info("[PitchAnalyzer] %s —— 越位候选不会产出", reason)
 
     # ------------------------------------------------------------------ 接触
 
@@ -355,7 +278,7 @@ class PitchAnalyzer:
             })
         return events
 
-    # ------------------------------------------------------------------ 出界 / 进球
+    # ------------------------------------------------------------------ 出界
 
     def _ball_events(self, players, ball, frame_index, timestamp) -> List[Dict[str, Any]]:
         if self.rules is None or ball is None:
@@ -377,18 +300,56 @@ class PitchAnalyzer:
                       else None)
 
         events: List[Dict[str, Any]] = []
-        goal = self.rules.check_goal(ball, last_touch_team=last_touch)
-        if goal is not None and self._passes_cooldown(("goal", goal["side"]), frame_index):
-            events.append({"type": "goal", "frame_index": frame_index,
-                           "timestamp": timestamp, "last_touch_team": last_touch,
-                           "last_touch_inferred": True, **goal})
-
         out = self.rules.check_ball_out(
             ball, last_touch_team=last_touch,
             goal_defending_team=rule_settings.goal_defending_team)
         if out is not None and self._passes_cooldown(("ball_out", out["side"]), frame_index):
             events.append({"type": "ball_out", "frame_index": frame_index,
                            "timestamp": timestamp, "last_touch_inferred": True, **out})
+        return events
+
+    # ------------------------------------------------------------------ 定位球
+
+    def _set_piece_events(self, players, ball, frame_index, timestamp) -> List[Dict[str, Any]]:
+        """定位球（角球 / 点球 / 任意球）候选。
+
+        这三条判据**全是纯几何的, 与检测模型无关** —— 只要标定是真的, 不需要重新
+        训练就能工作。这也是本模块存在的意义: 需求从一个训练不出来的模型任务,
+        变成了一个可以立刻交付的几何任务。
+
+        与 `_ball_events` 的分工: 那边报的是"球出界 → 该判什么", 这边报的是
+        "球被摆到了定位球的位置 → 正在准备踢什么"。
+        """
+        if self.rules is None or self.homography is None or ball is None:
+            return []
+        state = self._ball_state.status() if self._ball_state else {"stationary": None}
+        events: List[Dict[str, Any]] = []
+
+        corner = self.rules.check_corner_kick(ball)
+        if corner is not None and self._passes_cooldown(
+                ("corner_kick", corner["corner"]), frame_index):
+            events.append({"type": "corner_kick", "frame_index": frame_index,
+                           "timestamp": timestamp, **corner})
+
+        penalty = self.rules.check_penalty_kick(ball)
+        if penalty is not None and self._passes_cooldown(
+                ("penalty_kick", penalty["side"]), frame_index):
+            events.append({"type": "penalty_kick", "frame_index": frame_index,
+                           "timestamp": timestamp, **penalty})
+
+        # 任意球的"对手"用【最后触球方】近似 —— 犯规通常发生在球上, 犯规方往往就是
+        # 最后触球的一方。这只是近似, 所以事件里写明 opponents_inferred=True,
+        # 并且在没有队伍标签时宁可不产出, 也不拿"场上所有人"去凑 9.15 米。
+        opponents: List[Point] = []
+        if self._last_touch_team is not None:
+            opponents = [position for position, team, _ in players
+                         if team == self._last_touch_team]
+        free_kick = self.rules.check_free_kick(ball, opponents,
+                                               stationary=state["stationary"])
+        if free_kick is not None and self._passes_cooldown(("free_kick",), frame_index):
+            events.append({"type": "free_kick", "frame_index": frame_index,
+                           "timestamp": timestamp, "ball_state": state,
+                           "opponents_inferred": True, **free_kick})
         return events
 
     # ------------------------------------------------------------------ 工具
@@ -409,7 +370,7 @@ class PitchAnalyzer:
             "calibration": self.calibration.quality() if self.calibration else None,
             "tracker": self._tracker.summary() if self._tracker else None,
             "event_counts": dict(self._event_counts),
-            "offside_skipped_reason": self._offside_skip_reason,
+            "ball_state": self._ball_state.status() if self._ball_state else None,
             "settings": self.settings.to_audit(),
         }
 

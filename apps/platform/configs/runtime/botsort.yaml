@@ -16,7 +16,7 @@
 #   本文件 = ultralytics 的 BoT-SORT, 它产出 frames.jsonl 里的 track_id,
 #            也是 annotated.png 上画出来的 ID;
 #   football.yaml 的 tracking 节 = 几何层内部的 MultiObjectTracker,
-#            只服务越位/接触/球归属的时序判断, 不对外暴露 ID。
+#            只服务接触/球归属/球静止的时序判断, 不对外暴露 ID。
 # ============================================================
 
 tracker_type: botsort

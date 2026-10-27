@@ -14,8 +14,9 @@
     · ``model_name`` 只是【分派键】, 不决定加载哪个模型 —— 加载什么完全由
       ``checkpoint`` 决定。此前配置里写的 ``videomae_v2_base`` 和
       ``num_classes: 10`` 都是错的: 前者暗示是 V2, 后者与真实的 400 类对不上。
-    · ``slowfast`` / ``custom`` 是【预留位】: 传进来只会降级为空结果并打 warning,
-      **没有实现**。
+    · ``custom`` 是【预留位】: 传进来只会降级为空结果并打 warning, **没有实现**。
+      （``slowfast`` 已按需求清单删除: 它在代码里从未实现过, 且与 videomae 职责完全
+      重叠 —— 都是视频动作分类, 同时保留两个属于重复投入。）
     · 真实类别数不写死在配置里, 由加载后的模型自己报告（见 ActionRecognizer.num_classes）。
 """
 from __future__ import annotations
@@ -31,7 +32,7 @@ SECTION = "action_recognition"
 # 已实现的模型族（分派用前缀）
 SUPPORTED_FAMILIES: tuple[str, ...] = ("videomae",)
 # 文档里提过、代码里【没有】实现的族 —— 单独列出来, 免得被当成能力
-PLANNED_FAMILIES: tuple[str, ...] = ("slowfast", "custom")
+PLANNED_FAMILIES: tuple[str, ...] = ("custom",)
 
 CLIP_LENGTH_MIN: int = 1
 TOP_K_MIN: int = 1

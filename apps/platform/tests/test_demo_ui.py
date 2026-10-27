@@ -95,10 +95,11 @@ def test_overview_states_capabilities_honestly(client):
     # ③ 场地标定: 磁盘上没有标定文件 → 必须显示"未标定", 并说明几何事件不产出
     assert "未标定" in html
     assert "几何事件" in html
-    # ④ 动作识别: 只有 VideoMAE 已实现, SlowFast 必须写成"没有实现"
+    # ④ 动作识别: 只有 VideoMAE 已实现。SlowFast 已按需求清单删除,
+    #    所以页面上不该再出现它 —— 这条断言锁的就是"删干净了"。
     assert "VideoMAE" in html
-    assert "SlowFast 没有实现" in html
     assert "Kinetics-400" in html
+    assert "SlowFast" not in html
 
 
 def test_overview_shows_training_metrics_read_from_artifacts(client):

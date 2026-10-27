@@ -6,7 +6,8 @@
     · 没有真标定就不能产出"米" —— ad_hoc 映射必须自报 calibrated=False
     · 门线判定必须同时满足"越线"和"在门框内"（历史版本把 y 范围参数直接丢掉）
     · 出界必须看最后触球方, 缺它只能报 unknown, 不能猜
-    · check_offside 必须真的被调用到, 并带 needs_evidence
+    · 定位球(角球/点球/任意球)判据必须真的被调用到, 并带 needs_evidence
+    · 任意球要求"球静止 + 人墙退够"两者兼备; stationary=None(样本不足)绝不能当成静止
     · 没有标定时 analyzer 一条几何事件都不产出（历史版本用画面四角伪造标定）
     · 场地尺寸/阈值全部来自 PitchSpec + Settings, 改配置全链路跟着变
 
@@ -77,7 +78,7 @@ def test_pitch_defaults_follow_ifab():
     assert PITCH.penalty_area_y_min == pytest.approx(13.84)
     assert PITCH.penalty_area_y_max == pytest.approx(54.16)
     assert PITCH.centre_x == 52.5
-    # 越位线判定用到的"本方半场"边界就是中线
+    # centre_x 必须正好是中点(中线) —— 场地对称性的基础, 派生关键点全靠它
     assert PITCH.centre_x * 2 == PITCH.length
 
 
@@ -341,60 +342,93 @@ def test_rules_refuse_to_run_without_calibration():
     assert engine.skip_reason
     assert engine.check_collision([(10.0, 10.0), (10.5, 10.0)]) == []
     assert engine.check_ball_out((PITCH.length + 1.0, PITCH.centre_y)) is None
-    assert engine.check_goal((PITCH.length + 5.0, PITCH.centre_y)) is None
-    assert engine.check_offside([(100.0, 34.0)], [(95.0, 34.0), (97.0, 20.0)],
-                                (90.0, 34.0)) == []
+    # 定位球判据同样以"真标定"为前提: 未标定一律不产出（不是拿像素当米算）
+    assert engine.check_corner_kick((0.5, 0.5)) is None
+    assert engine.check_penalty_kick((PITCH.penalty_spot_distance, PITCH.centre_y)) is None
+    assert engine.check_free_kick((PITCH.centre_x, PITCH.centre_y),
+                                  [(PITCH.centre_x + 20.0, PITCH.centre_y)],
+                                  stationary=True) is None
 
 
-def test_offside_flags_player_beyond_second_last_defender():
+# ---- 定位球（角球 / 点球 / 任意球）: 本次新增, 判据全是纯几何的 ----
+
+def test_corner_kick_flags_ball_inside_the_corner_arc():
     engine = _engine()
-    defenders = [(99.0, 50.0), (97.0, 34.0), (95.0, 20.0)]     # 倒数第二 = 97
-    attackers = [(98.5, 30.0), (90.0, 34.0)]
-    candidates = engine.check_offside(attackers, defenders, (80.0, 34.0),
-                                      attacking_direction="right", kick_frame=42)
-    assert len(candidates) == 1
-    assert candidates[0]["player_idx"] == 0
-    assert candidates[0]["kick_frame"] == 42
-    assert candidates[0]["offside_line_x"] == pytest.approx(97.0)
-    assert candidates[0]["decision_status"] == "pending_human_review"
-    assert candidates[0]["second_last_inferred"] is False
+    candidate = engine.check_corner_kick((0.5, 0.5))         # 左上角, 距角点 0.71 m
+    assert candidate is not None
+    assert candidate["set_piece"] == "corner_kick"
+    assert candidate["corner"] == "corner_top_left"
+    assert candidate["side"] == "left"
+    assert candidate["arc"]["inside"] is True
+    assert "restart_awarded_by_referee" in candidate["requires_evidence"]
 
 
-def test_offside_margin_comes_from_settings():
-    """把容差放大后, 贴着越位线的球员就不再被判越位 —— 证明阈值来自配置。"""
-    strict = _engine(RuleSettings(offside_margin_m=0.0))
-    relaxed = _engine(RuleSettings(offside_margin_m=5.0))
-    defenders = [(99.0, 50.0), (97.0, 34.0), (95.0, 20.0)]
-    attackers = [(98.5, 30.0)]
-    assert len(strict.check_offside(attackers, defenders, (80.0, 34.0),
-                                    attacking_direction="right")) == 1
-    assert relaxed.check_offside(attackers, defenders, (80.0, 34.0),
-                                 attacking_direction="right") == []
-
-
-def test_offside_ignores_players_in_own_half_and_behind_the_ball():
+def test_corner_kick_ignores_the_ball_anywhere_else():
     engine = _engine()
-    defenders = [(99.0, 50.0), (97.0, 34.0)]
-    # 第一个在本方半场; 第二个在对方半场但没越过后卫; 第三个越过后卫但在球后面
-    attackers = [(40.0, 34.0), (90.0, 34.0), (96.5, 34.0)]
-    assert engine.check_offside(attackers, defenders, (99.5, 34.0),
-                                attacking_direction="right") == []
+    assert engine.check_corner_kick((PITCH.centre_x, PITCH.centre_y)) is None
+    assert engine.check_corner_kick((30.0, 0.0)) is None     # 在边线上, 但不是角球弧
 
 
-def test_offside_marks_missing_kick_frame_as_needs_evidence():
+def test_corner_arc_tolerance_comes_from_settings():
+    """容差放大后, 弧外一点的球也算"摆在角球弧内" —— 证明阈值来自配置。"""
+    strict = _engine(RuleSettings(corner_arc_tolerance_m=0.0))    # 弧半径 1.0 m
+    relaxed = _engine(RuleSettings(corner_arc_tolerance_m=3.0))
+    just_outside = (2.5, 0.0)                                     # 距角点 2.5 m
+    assert strict.check_corner_kick(just_outside) is None
+    assert relaxed.check_corner_kick(just_outside) is not None
+
+
+def test_penalty_kick_needs_the_ball_on_the_spot_not_merely_in_the_area():
+    """★ 关键区分: 球进罚球区是家常便饭, 点球的判据是【球被摆到罚球点】。"""
     engine = _engine()
-    candidates = engine.check_offside([(99.0, 34.0)], [(95.0, 20.0), (90.0, 50.0)],
-                                      (85.0, 34.0), attacking_direction="right")
-    assert candidates[0]["decision_status"] == "needs_evidence"
-    assert "kick_moment" in candidates[0]["requires_evidence"]
+    on_spot = engine.check_penalty_kick((PITCH.penalty_spot_distance, PITCH.centre_y))
+    assert on_spot is not None
+    assert on_spot["side"] == "left"
+    assert on_spot["in_penalty_area"] is True
+
+    # 同样在罚球区内、但离罚球点 8 米 → 不是点球
+    assert engine.check_penalty_kick((3.0, PITCH.centre_y)) is None
+    # 在罚球区外
+    assert engine.check_penalty_kick((PITCH.centre_x, PITCH.centre_y)) is None
 
 
-def test_offside_works_for_leftward_attack():
+def test_penalty_spot_tolerance_comes_from_settings():
+    strict = _engine(RuleSettings(penalty_spot_tolerance_m=0.1))
+    relaxed = _engine(RuleSettings(penalty_spot_tolerance_m=3.0))
+    two_metres_off = (PITCH.penalty_spot_distance + 2.0, PITCH.centre_y)
+    assert strict.check_penalty_kick(two_metres_off) is None
+    assert relaxed.check_penalty_kick(two_metres_off) is not None
+
+
+def test_free_kick_needs_both_a_still_ball_and_a_retreated_wall():
+    """★ 两条缺一不可: 只静止可能是等哨, 只退开可能只是正常防守站位。"""
     engine = _engine()
-    defenders = [(1.0, 20.0), (3.0, 34.0), (5.0, 50.0)]        # 倒数第二 = 3
-    candidates = engine.check_offside([(1.5, 34.0)], defenders, (20.0, 34.0),
-                                      attacking_direction="left")
-    assert len(candidates) == 1
+    ball = (PITCH.centre_x, PITCH.centre_y)
+    far_wall = [(PITCH.centre_x + 12.0, PITCH.centre_y)]      # 12 m > 9.15 m
+    near_wall = [(PITCH.centre_x + 3.0, PITCH.centre_y)]
+
+    assert engine.check_free_kick(ball, far_wall, stationary=True) is not None
+    assert engine.check_free_kick(ball, near_wall, stationary=True) is None
+    assert engine.check_free_kick(ball, far_wall, stationary=False) is None
+    # stationary=None 是"样本不足/未知", 绝不能顺势当成静止
+    assert engine.check_free_kick(ball, far_wall, stationary=None) is None
+
+
+def test_free_kick_without_any_opponent_is_not_guessed():
+    """一个对手都没看到 → 证据不足, 不硬判（而不是"距离无穷远所以成立"）。"""
+    engine = _engine()
+    assert engine.check_free_kick((PITCH.centre_x, PITCH.centre_y), [],
+                                  stationary=True) is None
+
+
+def test_free_kick_reports_the_915_gap_and_its_evidence():
+    engine = _engine()
+    candidate = engine.check_free_kick(
+        (PITCH.centre_x, PITCH.centre_y),
+        [(PITCH.centre_x + 10.0, PITCH.centre_y)], stationary=True)
+    assert candidate["required_wall_distance_m"] == pytest.approx(9.15)
+    assert candidate["nearest_opponent_m"] == pytest.approx(10.0)
+    assert "referee_whistle" in candidate["requires_evidence"]
 
 
 def test_contact_candidate_reports_metre_distance():
@@ -452,16 +486,6 @@ def test_ball_out_touchline_is_a_throw_in_to_the_other_team():
     assert verdict["awarded_to"] == "B"
 
 
-def test_goal_candidate_requires_ball_inside_goal_mouth():
-    engine = _engine()
-    goal = engine.check_goal((PITCH.length + 5.0, PITCH.centre_y))
-    assert goal is not None
-    assert goal["side"] == "right"
-    assert goal["decision_status"] == "needs_evidence"
-    assert "no_offence_before_goal" in goal["requires_evidence"]
-    assert engine.check_goal((PITCH.length + 5.0, 5.0)) is None
-
-
 def test_goal_line_tolerance_falls_back_to_ball_radius():
     """goal_line_tolerance_m 不给时取球半径; 显式给了就用给的。"""
     assert RuleSettings().effective_goal_line_tolerance_m == RuleSettings().ball_radius_m
@@ -477,36 +501,42 @@ def test_geometry_settings_read_from_config():
     config = {
         "pitch": {"length": 100, "width": 64},
         "calibration": {"max_reprojection_error_m": 2.5},
-        "rules": {"collision_distance_m": 3.0, "attacking_direction": "left"},
+        "rules": {"collision_distance_m": 3.0, "penalty_spot_tolerance_m": 1.5},
         "analyzer": {"event_cooldown_frames": 7},
     }
     settings = GeometrySettings.from_config(config)
     assert settings.pitch.length == 100.0
     assert settings.calibration.max_reprojection_error_m == 2.5
     assert settings.rules.collision_distance_m == 3.0
-    assert settings.rules.attacking_direction == "left"
+    assert settings.rules.penalty_spot_tolerance_m == 1.5
     assert settings.analyzer.event_cooldown_frames == 7
 
 
 def test_geometry_settings_accept_legacy_rule_keys():
     """历史配置里的旧键名仍然被认（避免旧配置静默失效）。"""
     settings = GeometrySettings.from_config({
-        "rules": {"offside_margin": 1.5, "collision_dist": 3.0,
-                  "ball_tol": 0.8, "goal_line_x_tolerance": 0.3},
+        "rules": {"penalty_spot_tolerance": 1.5, "collision_dist": 3.0,
+                  "ball_tol": 0.8, "goal_line_x_tolerance": 0.3,
+                  "free_kick_distance": 9.5},
         "event_cooldown_frames": 12,
     })
-    assert settings.rules.offside_margin_m == 1.5
+    assert settings.rules.penalty_spot_tolerance_m == 1.5
     assert settings.rules.collision_distance_m == 3.0
     assert settings.rules.ball_assignment_tolerance_m == 0.8
     assert settings.rules.goal_line_tolerance_m == 0.3
+    assert settings.rules.free_kick_wall_distance_m == 9.5
     assert settings.analyzer.event_cooldown_frames == 12
 
 
 def test_geometry_settings_reject_bad_values():
     with pytest.raises(ValueError, match="collision_distance_m"):
         GeometrySettings.from_config({"rules": {"collision_distance_m": -1}})
-    with pytest.raises(ValueError, match="attacking_direction"):
-        GeometrySettings.from_config({"rules": {"attacking_direction": "up"}})
+    with pytest.raises(ValueError, match="free_kick_wall_distance_m"):
+        GeometrySettings.from_config({"rules": {"free_kick_wall_distance_m": 0}})
+    # "最少样本数"不能大于窗口长度, 否则永远判不出静止
+    with pytest.raises(ValueError, match="ball_stationary_min_samples"):
+        GeometrySettings.from_config({"rules": {"ball_stationary_window_frames": 3,
+                                                "ball_stationary_min_samples": 5}})
 
 
 def test_settings_audit_snapshot_lists_every_effective_value():
@@ -568,41 +598,46 @@ def test_analyzer_emits_contact_candidate_with_calibration():
     assert contacts[0]["decision_status"] == "pending_human_review"
 
 
-def test_analyzer_calls_offside_when_teams_are_known():
-    """★ 回归测试: check_offside 过去从未被调用; 现在必须真的产出越位候选。"""
-    analyzer = PitchAnalyzer(*IMAGE_SIZE,
-                             config={"rules": {"attacking_direction": "right",
-                                               "attacking_team": "A"}},
-                             calibration=_synthetic_calibration())
-    to_pixel = _projector()
-    events = analyzer.analyze(_frame(0, [
-        _box("player", to_pixel(98.5, 30.0), team="A"),     # 越位
-        _box("player", to_pixel(80.0, 34.0), team="A"),
-        # 三名防守球员: 离本方球门线最近的是 99, 所以倒数第二 = 97 → 越位线 x=97
-        _box("player", to_pixel(99.0, 50.0), team="B"),
-        _box("player", to_pixel(97.0, 34.0), team="B"),
-        _box("player", to_pixel(95.0, 20.0), team="B"),
-        _box("ball", to_pixel(80.5, 34.0)),
-    ]))
-    offsides = [e for e in events if e["type"] == "offside"]
-    assert len(offsides) == 1
-    assert offsides[0]["team"] == "A"
-    assert offsides[0]["offside_line_x"] == pytest.approx(97.0)
-    assert offsides[0]["attacking_direction_inferred"] is False
-    assert "kick_moment" in offsides[0]["requires_evidence"]
-
-
-def test_analyzer_reports_why_offside_is_skipped():
-    """没有队伍标签时越位不产出, 但必须给出可查的原因（而不是静默）。"""
+def test_analyzer_emits_corner_kick_when_the_ball_sits_in_the_arc():
+    """★ 回归测试: 新增的定位球判据必须真的被 analyzer 调用到, 而不是又一批死代码。"""
     analyzer = PitchAnalyzer(*IMAGE_SIZE, config={},
                              calibration=_synthetic_calibration())
     to_pixel = _projector()
     events = analyzer.analyze(_frame(0, [
-        _box("player", to_pixel(98.5, 30.0)),
-        _box("ball", to_pixel(80.5, 34.0)),
+        _box("player", to_pixel(3.0, 3.0), team="A"),
+        _box("ball", to_pixel(0.5, 0.5)),
     ]))
-    assert [e for e in events if e["type"] == "offside"] == []
-    assert "球队归属" in analyzer.summary()["offside_skipped_reason"]
+    corners = [e for e in events if e["type"] == "corner_kick"]
+    assert len(corners) == 1
+    assert corners[0]["corner"] == "corner_top_left"
+    assert corners[0]["decision_status"] == "pending_human_review"
+
+
+def test_analyzer_emits_penalty_kick_when_the_ball_is_on_the_spot():
+    analyzer = PitchAnalyzer(*IMAGE_SIZE, config={},
+                             calibration=_synthetic_calibration())
+    to_pixel = _projector()
+    events = analyzer.analyze(_frame(0, [
+        _box("player", to_pixel(14.0, 30.0), team="A"),
+        _box("ball", to_pixel(PITCH.penalty_spot_distance, PITCH.centre_y)),
+    ]))
+    penalties = [e for e in events if e["type"] == "penalty_kick"]
+    assert len(penalties) == 1
+    assert penalties[0]["side"] == "left"
+
+
+def test_analyzer_reports_ball_state_in_summary():
+    """球静止是跨帧状态, 必须在 summary 里可查（而不是只在事件里一闪而过）。"""
+    analyzer = PitchAnalyzer(*IMAGE_SIZE, config={},
+                             calibration=_synthetic_calibration())
+    to_pixel = _projector()
+    ball_pixel = to_pixel(PITCH.centre_x, PITCH.centre_y)
+    for index in range(8):
+        analyzer.analyze(_frame(index, [_box("ball", ball_pixel)]))
+    state = analyzer.summary()["ball_state"]
+    assert state["samples"] >= RuleSettings().ball_stationary_min_samples
+    assert state["stationary"] is True
+    assert state["displacement_m"] == pytest.approx(0.0, abs=0.05)
 
 
 def test_analyzer_cooldown_suppresses_repeats():
