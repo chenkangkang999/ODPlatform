@@ -1,0 +1,55 @@
+# ============================================================
+# 数据接入（odp-ingest）配置
+#
+# ★ 唯一加载口: od_platform.data_pipeline.ingest.settings.IngestSettings.load()
+# ★ 本文件两节都【真正生效】:
+#     layouts → LayoutSettings（布局探测规则）
+#     ingest  → IngestSettings（接入策略: 落地方式 / 裁框 / 冲突 / 体检）
+# ★ 代码里不写死任何可调项: 每一项都对应一个 dataclass 字段。
+#   想知道"能调什么"看 settings.py; 想知道"这次按什么跑的"看目标目录里的
+#   ingest_report.json 的 settings 块。
+# ★ 遇到一种新布局, 只改本文件的 layouts 节即可, 不用改代码。
+# ============================================================
+
+# ---------- 布局探测规则 ----------
+# 探测顺序: flat（images/+labels/）→ presplit（<split>/images/）→ legacy（data/<split>/）
+#           → images_only（只有图, 会被明确拒绝）
+layouts:
+  images_dirname: images            # flat/presplit 的图片子目录名
+  labels_dirname: labels            # flat/presplit 的标签子目录名
+  # 已分好集合的目录名。Roboflow 导出用 train/valid/test, 有的数据集用 val。
+  split_dirnames: [train, valid, val, test]
+  nested_dirname: data              # legacy 布局: <src>/data/<split>/*.jpg + 同名 .txt
+  # 认哪些图片后缀（统一按小写比较, 免得 .JPG 漏掉）
+  image_suffixes: [.jpg, .jpeg, .png, .bmp, .webp]
+  label_suffix: .txt
+  # 类名从哪个文件读; 顺序即 class_id, 必须原样保留
+  class_file_names: [data.yaml, dataset.yaml, data.yml]
+
+# ---------- 接入策略 ----------
+ingest:
+  # 硬链接优先: 同卷时零字节复制。跨卷/不支持时**自动回退复制**并如实记录。
+  prefer_hardlink: true
+  # 拍平后重名怎么办。abort = 直接拒绝（默认, 不静默覆盖）
+  #                      prefix = 给重名文件加来源目录短摘要后缀（可复现且唯一）
+  conflict_policy: abort
+  conflict_prefix: dup
+  report_filename: ingest_report.json
+
+  # 把 YOLO 归一化坐标夹回 [0,1]。
+  # ★ 为什么默认要裁: Roboflow 导出的坐标带浮点残渣, 实测 92/22878 个框越界 0.5px,
+  #   D4 的 bbox_within_image 会因此把总评拉成 WARNING, 而 WARNING 不允许开训。
+  clamp_boxes: true
+  # 裁剪后保留的小数位。6 位足够且不会因为舍入又造出新的越界
+  # （误差 <= 0.5e-6 < 下面的容差）。
+  coordinate_precision: 6
+  # 判定"越界"的容差 —— 与 D4 的 BBOX_EDGE_TOLERANCE 同源, 改一处要一起想。
+  box_edge_tolerance: 1.0e-6
+
+  # 图片解码探针: 真去读文件头与数据块, 能发现被截断/损坏的图。
+  # 大图片集上可以关掉（--no-probe）省时间, 但那样就发现不了坏图。
+  probe_images: true
+  # 最小边小于此值的图会在报告里单独计数（小目标漏检的常见根因）
+  small_image_side_px: 320
+  # 报告/日志里每类最多列几个名字
+  preview_limit: 20

@@ -1,0 +1,30 @@
+path: data/processed/football
+train: images/train
+val: images/val
+test: images/test
+names:
+  0: ball
+  1: goalkeeper
+  2: player
+  3: referee
+nc: 4
+odp_meta:
+  schema_version: 1
+  dataset_name: football
+  source_format: yolo
+  task: detect
+  tool_version: odp-transform/0.4
+  created_at: '2026-10-27T10:03:31'
+  contract_fingerprint: 643179f87a53f134e3c6f5ab1d9f8363491ea82f9bd0d5c2ef7a3c5baad4db9d
+  manifest_path: runs/data_pipeline/20261027-100331/manifest.json
+  split:
+    strategy: stratified_multilabel
+    seed: 42
+    rates:
+      train: 0.8
+      val: 0.1
+      test: 0.1
+    counts:
+      train: 297
+      val: 39
+      test: 36
